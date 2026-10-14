@@ -1,0 +1,239 @@
+{
+  "name": "git-tools-as",
+  "displayName": "Git Tools (Android Studio style)",
+  "description": "Android Studio style Git tool window for VS Code: commit panel with checkboxes, log with branch graph, branches popup, push/pull dialogs, stashes and AI commit messages (Claude / Gemini).",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "android studio",
+    "commit",
+    "log",
+    "graph"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "workspaceContains:.git",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitTools",
+          "title": "Git Tools",
+          "icon": "media/activity.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "gitToolsPanel",
+          "title": "Git Tools",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitTools": [
+        {
+          "type": "webview",
+          "id": "gitTools.commit",
+          "name": "Commit"
+        },
+        {
+          "id": "gitTools.branches",
+          "name": "Branches"
+        }
+      ],
+      "gitToolsPanel": [
+        {
+          "type": "webview",
+          "id": "gitTools.log",
+          "name": "Log"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "gitTools.refresh", "title": "Refresh", "category": "Git Tools", "icon": "$(refresh)" },
+      { "command": "gitTools.selectRepository", "title": "Select Repository…", "category": "Git Tools", "icon": "$(repo)" },
+      { "command": "gitTools.focusCommit", "title": "Commit…", "category": "Git Tools", "icon": "$(check)" },
+      { "command": "gitTools.push", "title": "Push…", "category": "Git Tools", "icon": "$(arrow-up)" },
+      { "command": "gitTools.update", "title": "Update Project / Pull…", "category": "Git Tools", "icon": "$(arrow-down)" },
+      { "command": "gitTools.fetch", "title": "Fetch", "category": "Git Tools", "icon": "$(sync)" },
+      { "command": "gitTools.branches", "title": "Branches…", "category": "Git Tools", "icon": "$(git-branch)" },
+      { "command": "gitTools.newBranch", "title": "New Branch…", "category": "Git Tools", "icon": "$(add)" },
+      { "command": "gitTools.checkoutRevision", "title": "Checkout Tag or Revision…", "category": "Git Tools" },
+      { "command": "gitTools.stash", "title": "Stash Changes…", "category": "Git Tools", "icon": "$(archive)" },
+      { "command": "gitTools.resolveConflicts", "title": "Resolve Conflicts…", "category": "Git Tools", "icon": "$(git-merge)" },
+      { "command": "gitTools.continueOperation", "title": "Continue Merge / Rebase", "category": "Git Tools" },
+      { "command": "gitTools.abortOperation", "title": "Abort Merge / Rebase", "category": "Git Tools" },
+      { "command": "gitTools.showLog", "title": "Show Git Log", "category": "Git Tools", "icon": "$(history)" },
+      { "command": "gitTools.fileHistory", "title": "Show History for Current File", "category": "Git Tools", "icon": "$(history)" },
+      { "command": "gitTools.manageRemotes", "title": "Manage Remotes…", "category": "Git Tools" },
+      { "command": "gitTools.showOutput", "title": "Show Git Console", "category": "Git Tools", "icon": "$(output)" },
+
+      { "command": "gitTools.ai.generate", "title": "Generate Commit Message", "category": "Git Tools", "icon": "$(sparkle)" },
+      { "command": "gitTools.ai.configure", "title": "AI Commit Message: Configure…", "category": "Git Tools" },
+      { "command": "gitTools.ai.setApiKey", "title": "AI Commit Message: Set API Key…", "category": "Git Tools" },
+      { "command": "gitTools.ai.clearApiKey", "title": "AI Commit Message: Remove API Key…", "category": "Git Tools" },
+      { "command": "gitTools.ai.testConnection", "title": "AI Commit Message: Test Connection", "category": "Git Tools" },
+      { "command": "gitTools.ai.setupGuide", "title": "AI Commit Message: Setup Guide", "category": "Git Tools", "icon": "$(book)" },
+
+      { "command": "gitTools.branch.checkout", "title": "Checkout", "category": "Git Tools" },
+      { "command": "gitTools.branch.newFrom", "title": "New Branch from Here…", "category": "Git Tools" },
+      { "command": "gitTools.branch.checkoutRebase", "title": "Checkout and Rebase onto Current", "category": "Git Tools" },
+      { "command": "gitTools.branch.compare", "title": "Compare with Current", "category": "Git Tools" },
+      { "command": "gitTools.branch.showLog", "title": "Show in Log", "category": "Git Tools" },
+      { "command": "gitTools.branch.rebaseOnto", "title": "Rebase Current onto This", "category": "Git Tools" },
+      { "command": "gitTools.branch.merge", "title": "Merge into Current", "category": "Git Tools" },
+      { "command": "gitTools.branch.update", "title": "Update (Fast-forward from Upstream)", "category": "Git Tools" },
+      { "command": "gitTools.branch.push", "title": "Push…", "category": "Git Tools" },
+      { "command": "gitTools.branch.rename", "title": "Rename…", "category": "Git Tools" },
+      { "command": "gitTools.branch.delete", "title": "Delete", "category": "Git Tools" },
+      { "command": "gitTools.branch.copyName", "title": "Copy Branch Name", "category": "Git Tools" },
+      { "command": "gitTools.tag.checkout", "title": "Checkout Tag", "category": "Git Tools" },
+      { "command": "gitTools.tag.push", "title": "Push Tag", "category": "Git Tools" },
+      { "command": "gitTools.tag.delete", "title": "Delete Tag", "category": "Git Tools" },
+      { "command": "gitTools.stash.apply", "title": "Apply", "category": "Git Tools" },
+      { "command": "gitTools.stash.pop", "title": "Pop", "category": "Git Tools" },
+      { "command": "gitTools.stash.drop", "title": "Drop", "category": "Git Tools" },
+      { "command": "gitTools.stash.branch", "title": "Unstash as Branch…", "category": "Git Tools" },
+      { "command": "gitTools.stash.showFiles", "title": "Show Changes", "category": "Git Tools" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "gitTools.ai.generate", "when": "view == gitTools.commit", "group": "navigation@1" },
+        { "command": "gitTools.stash", "when": "view == gitTools.commit", "group": "navigation@2" },
+        { "command": "gitTools.refresh", "when": "view == gitTools.commit", "group": "navigation@3" },
+        { "command": "gitTools.update", "when": "view == gitTools.commit", "group": "1_remote@1" },
+        { "command": "gitTools.push", "when": "view == gitTools.commit", "group": "1_remote@2" },
+        { "command": "gitTools.fetch", "when": "view == gitTools.commit", "group": "1_remote@3" },
+        { "command": "gitTools.selectRepository", "when": "view == gitTools.commit", "group": "2_repo@1" },
+        { "command": "gitTools.ai.configure", "when": "view == gitTools.commit", "group": "3_ai@1" },
+        { "command": "gitTools.ai.setupGuide", "when": "view == gitTools.commit", "group": "3_ai@2" },
+
+        { "command": "gitTools.newBranch", "when": "view == gitTools.branches", "group": "navigation@1" },
+        { "command": "gitTools.fetch", "when": "view == gitTools.branches", "group": "navigation@2" },
+        { "command": "gitTools.refresh", "when": "view == gitTools.branches", "group": "navigation@3" },
+
+        { "command": "gitTools.fileHistory", "when": "view == gitTools.log", "group": "navigation@1" },
+        { "command": "gitTools.showOutput", "when": "view == gitTools.log", "group": "navigation@2" },
+        { "command": "gitTools.refresh", "when": "view == gitTools.log", "group": "navigation@3" }
+      ],
+      "view/item/context": [
+        { "command": "gitTools.branch.checkout", "when": "view == gitTools.branches && viewItem =~ /^branch(?!-current)/", "group": "1_checkout@1" },
+        { "command": "gitTools.branch.newFrom", "when": "view == gitTools.branches && viewItem =~ /^branch/", "group": "1_checkout@2" },
+        { "command": "gitTools.branch.checkoutRebase", "when": "view == gitTools.branches && viewItem == branch-local", "group": "1_checkout@3" },
+        { "command": "gitTools.branch.compare", "when": "view == gitTools.branches && viewItem =~ /^branch-(local|remote)$/", "group": "2_compare@1" },
+        { "command": "gitTools.branch.showLog", "when": "view == gitTools.branches && viewItem =~ /^branch/", "group": "2_compare@2" },
+        { "command": "gitTools.branch.rebaseOnto", "when": "view == gitTools.branches && viewItem =~ /^branch-(local|remote)$/", "group": "3_integrate@1" },
+        { "command": "gitTools.branch.merge", "when": "view == gitTools.branches && viewItem =~ /^branch-(local|remote)$/", "group": "3_integrate@2" },
+        { "command": "gitTools.branch.update", "when": "view == gitTools.branches && viewItem == branch-local", "group": "4_remote@1" },
+        { "command": "gitTools.branch.push", "when": "view == gitTools.branches && viewItem == branch-current", "group": "4_remote@2" },
+        { "command": "gitTools.branch.rename", "when": "view == gitTools.branches && viewItem =~ /^branch-(local|current)$/", "group": "5_edit@1" },
+        { "command": "gitTools.branch.copyName", "when": "view == gitTools.branches && viewItem =~ /^branch/", "group": "5_edit@2" },
+        { "command": "gitTools.branch.delete", "when": "view == gitTools.branches && viewItem =~ /^branch-(local|remote)$/", "group": "5_edit@3" },
+        { "command": "gitTools.tag.checkout", "when": "view == gitTools.branches && viewItem == tag", "group": "1@1" },
+        { "command": "gitTools.branch.newFrom", "when": "view == gitTools.branches && viewItem == tag", "group": "1@2" },
+        { "command": "gitTools.branch.merge", "when": "view == gitTools.branches && viewItem == tag", "group": "1@3" },
+        { "command": "gitTools.tag.push", "when": "view == gitTools.branches && viewItem == tag", "group": "2@1" },
+        { "command": "gitTools.tag.delete", "when": "view == gitTools.branches && viewItem == tag", "group": "2@2" },
+        { "command": "gitTools.stash.pop", "when": "view == gitTools.branches && viewItem == stash", "group": "1@1" },
+        { "command": "gitTools.stash.apply", "when": "view == gitTools.branches && viewItem == stash", "group": "1@2" },
+        { "command": "gitTools.stash.showFiles", "when": "view == gitTools.branches && viewItem == stash", "group": "1@3" },
+        { "command": "gitTools.stash.branch", "when": "view == gitTools.branches && viewItem == stash", "group": "2@1" },
+        { "command": "gitTools.stash.drop", "when": "view == gitTools.branches && viewItem == stash", "group": "2@2" }
+      ],
+      "scm/title": [
+        { "command": "gitTools.ai.generate", "when": "scmProvider == git", "group": "navigation@0" }
+      ],
+      "editor/title/context": [
+        { "command": "gitTools.fileHistory", "when": "resourceScheme == file", "group": "gitTools@1" }
+      ],
+      "commandPalette": [
+        { "command": "gitTools.branch.checkout", "when": "false" },
+        { "command": "gitTools.branch.newFrom", "when": "false" },
+        { "command": "gitTools.branch.checkoutRebase", "when": "false" },
+        { "command": "gitTools.branch.compare", "when": "false" },
+        { "command": "gitTools.branch.showLog", "when": "false" },
+        { "command": "gitTools.branch.rebaseOnto", "when": "false" },
+        { "command": "gitTools.branch.merge", "when": "false" },
+        { "command": "gitTools.branch.update", "when": "false" },
+        { "command": "gitTools.branch.push", "when": "false" },
+        { "command": "gitTools.branch.rename", "when": "false" },
+        { "command": "gitTools.branch.delete", "when": "false" },
+        { "command": "gitTools.branch.copyName", "when": "false" },
+        { "command": "gitTools.tag.checkout", "when": "false" },
+        { "command": "gitTools.tag.push", "when": "false" },
+        { "command": "gitTools.tag.delete", "when": "false" },
+        { "command": "gitTools.stash.apply", "when": "false" },
+        { "command": "gitTools.stash.pop", "when": "false" },
+        { "command": "gitTools.stash.drop", "when": "false" },
+        { "command": "gitTools.stash.branch", "when": "false" },
+        { "command": "gitTools.stash.showFiles", "when": "false" }
+      ]
+    },
+    "configuration": {
+      "title": "Git Tools",
+      "properties": {
+        "gitTools.gitPath": {
+          "type": "string",
+          "default": "git",
+          "description": "Path to the git executable."
+        },
+        "gitTools.log.maxCommits": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 100,
+          "description": "Maximum number of commits loaded in the Log."
+        },
+        "gitTools.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh automatically when files or the .git folder change."
+        },
+        "gitTools.ai.provider": {
+          "type": "string",
+          "enum": ["none", "claude", "gemini"],
+          "enumDescriptions": [
+            "AI commit messages are disabled.",
+            "Anthropic Claude (paid API).",
+            "Google Gemini (has a free tier)."
+          ],
+          "default": "none",
+          "markdownDescription": "Service used to generate commit messages. The API key is stored in VS Code Secret Storage via **Git Tools: AI Commit Message: Set API Key…**. See **Git Tools: AI Commit Message: Setup Guide**."
+        },
+        "gitTools.ai.claudeModel": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Claude model id, for example `claude-opus-5-5`, `claude-sonnet-5-5` or `claude-haiku-5-5`."
+        },
+        "gitTools.ai.geminiModel": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Gemini model id, for example `gemini-3.8-flash` or `gemini-3.5-flash-lite`."
+        },
+        "gitTools.ai.language": {
+          "type": "string",
+          "default": "",
+          "description": "Language of generated messages (e.g. English, Vietnamese). Empty follows the repository history."
+        },
+        "gitTools.ai.instructions": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "description": "Extra instructions for generated messages, e.g. \"Use Conventional Commits\"."
+        }
+      }
+    }
+  }
+}

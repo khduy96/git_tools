@@ -1,0 +1,145 @@
+/* Shared styles for all Git Tools webviews. Colors come from the VS Code theme. */
+:root {
+  --gt-modified: var(--vscode-gitDecoration-modifiedResourceForeground, #6ca0f5);
+  --gt-added: var(--vscode-gitDecoration-addedResourceForeground, #73bd79);
+  --gt-deleted: var(--vscode-gitDecoration-deletedResourceForeground, #8c8c8c);
+  --gt-untracked: var(--vscode-gitDecoration-untrackedResourceForeground, #d1675a);
+  --gt-conflict: var(--vscode-gitDecoration-conflictingResourceForeground, #e06c75);
+  --gt-renamed: var(--vscode-gitDecoration-renamedResourceForeground, #6ca0f5);
+  --gt-muted: var(--vscode-descriptionForeground);
+  --gt-border: var(--vscode-panel-border, var(--vscode-widget-border, rgba(128,128,128,.35)));
+  --gt-hover: var(--vscode-list-hoverBackground);
+  --gt-selected: var(--vscode-list-activeSelectionBackground);
+  --gt-selected-fg: var(--vscode-list-activeSelectionForeground);
+  --gt-inactive-selected: var(--vscode-list-inactiveSelectionBackground);
+  --gt-mono: var(--vscode-editor-font-family, Consolas, monospace);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+  background: transparent;
+}
+
+button {
+  font: inherit;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+button:hover { background: var(--vscode-button-hoverBackground); }
+button.secondary {
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+}
+button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+button:disabled { opacity: .5; cursor: default; }
+
+button.icon {
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  border: none;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+button.icon:hover { background: var(--vscode-toolbar-hoverBackground); }
+
+input[type=text], input[type=search], textarea {
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  padding: 4px 6px;
+  outline: none;
+}
+input:focus, textarea:focus { border-color: var(--vscode-focusBorder); }
+textarea { resize: vertical; }
+
+input[type=checkbox] {
+  accent-color: var(--vscode-checkbox-background, var(--vscode-focusBorder));
+  margin: 0;
+}
+
+.muted { color: var(--gt-muted); }
+.mono { font-family: var(--gt-mono); }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.t-modified, .t-typeChanged { color: var(--gt-modified); }
+.t-added, .t-copied { color: var(--gt-added); }
+.t-deleted { color: var(--gt-deleted); text-decoration: line-through; }
+.t-renamed { color: var(--gt-renamed); }
+.t-untracked { color: var(--gt-untracked); }
+.t-conflicted { color: var(--gt-conflict); }
+
+.ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  line-height: 15px;
+  padding: 0 4px;
+  margin-right: 4px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ref.head { color: #e5c07b; }
+.ref.local { color: #73bd79; }
+.ref.remote { color: #c678dd; }
+.ref.tag { color: #56b6c2; }
+
+/* Context menu */
+.menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 220px;
+  padding: 4px 0;
+  color: var(--vscode-menu-foreground);
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  border: 1px solid var(--vscode-menu-border, var(--gt-border));
+  border-radius: 5px;
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0,0,0,.35));
+}
+.menu .item {
+  padding: 4px 20px 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.menu .item:hover:not(.disabled) {
+  color: var(--vscode-menu-selectionForeground);
+  background: var(--vscode-menu-selectionBackground);
+}
+.menu .item.disabled { opacity: .45; cursor: default; }
+.menu .item.danger { color: var(--vscode-errorForeground); }
+.menu .sep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, var(--gt-border)); }
+
+.empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--gt-muted);
+}
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--gt-muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
