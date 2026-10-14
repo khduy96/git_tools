@@ -1,0 +1,80 @@
+html, body { overflow-y: auto; }
+#app { padding: 2px 0 6px; }
+
+.repo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.repo:hover { background: var(--gt-hover); }
+.repo.current { background: var(--gt-inactive-selected); }
+
+.repo .check {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--vscode-charts-green, #73bd79);
+  font-weight: 700;
+}
+.repo .main { flex: 1; min-width: 0; }
+.repo .line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.repo .rname { font-weight: 500; }
+.repo.current .rname { font-weight: 700; }
+.repo .rel { font-size: .9em; }
+
+/* Branch widget: ⑂ name ↑ahead ↓behind ▾ (same as the app's top bar). */
+button.branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-left: -6px;
+  padding: 2px 6px;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  font-size: 13px;
+}
+button.branch:hover { background: var(--vscode-toolbar-hoverBackground, var(--gt-hover)); }
+.bicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--vscode-descriptionForeground);
+}
+.bname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ahead { font-size: 12px; color: var(--gt-added); }
+.behind { font-size: 12px; color: var(--gt-modified); margin-left: -2px; }
+.chev {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-left: -2px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.state {
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--vscode-editorWarning-foreground, #e5a54b);
+  border: 1px solid currentColor;
+}
+.conflicts { font-size: 12px; color: var(--gt-conflict); }
+
+.acts { display: none; gap: 2px; flex-shrink: 0; }
+.repo:hover .acts { display: flex; }
+.act { font-size: 14px; line-height: 16px; }

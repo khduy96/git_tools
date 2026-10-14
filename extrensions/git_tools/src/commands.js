@@ -666,6 +666,38 @@ async function deleteUntracked(m, changes) {
   await m.refreshStatus();
 }
 
+/**
+ * Starts tracking unversioned files (Android Studio "Add to VCS"): they move
+ * from "Unversioned Files" to "Changes" and are included in the next commit.
+ * @param {RepoModel} m
+ */
+async function addToVcs(m, changes) {
+  const files = changes.filter((c) => c.type === 'untracked');
+  if (!files.length) return;
+  for (const c of files) m.excludedTracked.delete(c.path);
+  await m.run(files.length === 1 ? `Add ${path.basename(files[0].path)} to Git` : `Add ${files.length} files to Git`,
+    // Paths go through stdin: a dragged folder can contain thousands of files.
+    () => m.repo.git.run(['add', '--pathspec-from-file=-', '--pathspec-file-nul'],
+      { stdin: `${files.map((c) => lit(c.path)).join('\0')}\0`, log: true }),
+    { success: `${files.length} file(s) added to Git`, refresh: false });
+  await m.refreshStatus();
+}
+
+/**
+ * Stops tracking newly added files without deleting them: they move back to
+ * "Unversioned Files".
+ * @param {RepoModel} m
+ */
+async function unversion(m, changes) {
+  const files = changes.filter((c) => c.type === 'added');
+  if (!files.length) return;
+  await m.run(files.length === 1 ? `Unversion ${path.basename(files[0].path)}` : `Unversion ${files.length} files`,
+    () => m.repo.git.run(['rm', '--cached', '-q', '--pathspec-from-file=-', '--pathspec-file-nul'],
+      { stdin: `${files.map((c) => lit(c.path)).join('\0')}\0`, log: true }),
+    { success: `${files.length} file(s) moved to Unversioned Files`, refresh: false });
+  await m.refreshStatus();
+}
+
 /** @param {RepoModel} m */
 async function addToGitignore(m, changes) {
   const file = path.join(m.root, '.gitignore');
@@ -680,5 +712,5 @@ module.exports = {
   validateRefName, smartCheckout, checkoutBranch, newBranch, renameBranch, deleteBranch, mergeIntoCurrent, rebaseOnto,
   checkoutAndRebase, compareWithCurrent, updateBranch, branchActions, runBranchAction, branchesPopup, checkoutRevision,
   push, update, fetch, manageRemotes, stash, stashApply, stashDrop, stashBranch, stashShowFiles, resolveConflicts,
-  commitAction, rollback, deleteUntracked, addToGitignore, lit,
+  commitAction, rollback, deleteUntracked, addToGitignore, addToVcs, unversion, lit,
 };

@@ -10,7 +10,7 @@ Extension cho VS Code mang Git tool window kiểu Android Studio vào VS Code:
 - Merge tool 3 cột.
 - **AI tự viết commit message** bằng Claude hoặc Google Gemini.
 
-Phiên bản: 0.1.0 · Yêu cầu: VS Code **1.90 trở lên** và **Git** đã cài (lệnh `git` chạy được trong terminal).
+Phiên bản: 0.2.2 · Yêu cầu: VS Code **1.90 trở lên** và **Git** đã cài (lệnh `git` chạy được trong terminal).
 
 ---
 
@@ -38,7 +38,7 @@ Phiên bản: 0.1.0 · Yêu cầu: VS Code **1.90 trở lên** và **Git** đã 
 
 ### Cách 1 — Cài từ file `.vsix` (khuyên dùng)
 
-File `git-tools-as-0.1.0.vsix` nằm trong thư mục extension.
+File `git-tools-as-0.2.2.vsix` nằm trong thư mục extension.
 
 **Trong VS Code:**
 1. Mở view Extensions (`Ctrl+Shift+X`).
@@ -48,7 +48,7 @@ File `git-tools-as-0.1.0.vsix` nằm trong thư mục extension.
 **Hoặc bằng terminal:**
 
 ```bash
-code --install-extension git-tools-as-0.1.0.vsix
+code --install-extension git-tools-as-0.2.2.vsix
 ```
 
 Sau khi cài, nếu VS Code yêu cầu thì bấm **Reload**. Biểu tượng **Git Tools** sẽ xuất hiện trên thanh activity bar bên trái.
@@ -79,6 +79,7 @@ code --uninstall-extension local.git-tools-as
 
 | Vị trí | Thành phần | Tương ứng Android Studio |
 |---|---|---|
+| Activity bar ▸ **Git Tools** ▸ **Source Control Repositories** | Danh sách mọi repository trong workspace, kể cả repo con. Repo đang chọn có dấu ✓ | Danh sách repository / VCS roots |
 | Activity bar ▸ **Git Tools** ▸ **Commit** | Danh sách thay đổi, ô commit message, nút Commit | Commit tool window (Alt+0) |
 | Activity bar ▸ **Git Tools** ▸ **Branches** | HEAD, Local, Remote, Tags, Stashes | Cây branch trong Git tool window |
 | Panel dưới ▸ **Git Tools** ▸ **Log** | Lịch sử commit có đồ thị nhánh | Git ▸ Log (Alt+9) |
@@ -90,7 +91,32 @@ code --uninstall-extension local.git-tools-as
 - Menu **View ▸ Open View… ▸ Log**; hoặc
 - Bấm một branch trong cây Branches.
 
-**Nhiều repository trong một workspace:** extension tự chọn repo chứa file đang mở. Muốn đổi tay thì dùng **Git Tools: Select Repository…** (hoặc `…` trên view Commit). Lệnh này cũng mở được một thư mục repo nằm ngoài workspace.
+### Source Control Repositories
+
+View đầu tiên trong Git Tools liệt kê mọi repository tìm thấy:
+- Thư mục gốc của workspace, cộng các repo con nằm sâu tới số cấp đặt trong setting `gitTools.repositoryScanMaxDepth` (mặc định 1 cấp).
+- Các repo bạn tự mở thêm.
+
+Mỗi repo chiếm một dòng, gồm:
+- **✓** nếu đây là repo đang chọn;
+- tên repo (repo con có kèm đường dẫn mờ bên cạnh);
+- **branch widget** giống thanh trên cùng của app Git Tools: `⑂ main ↑2 ↓1 ▾`:
+  - ↑ (màu xanh lá) là số commit chưa push;
+  - ↓ (màu xanh dương) là số commit chưa pull;
+  - rê chuột lên widget để xem branch đang tracking (`Tracking origin/main`), hoặc dòng `No upstream branch` nếu chưa có upstream;
+- bên cạnh widget: nhãn MERGING / REBASING nếu đang dở, số conflict, số file thay đổi, hoặc thao tác đang chạy.
+
+| Thao tác | Cách làm |
+|---|---|
+| Chọn repo làm việc | Click vào dòng. View Commit, Branches, Log và thanh trạng thái chuyển sang repo đó |
+| Mở popup Branches của repo | Click vào branch widget `⑂ main ▾` |
+| Fetch / Pull / Push nhanh | Các nút ⟳ ↙ ↗ hiện ở cuối dòng khi rê chuột. Thao tác chạy trên đúng repo đó, kể cả khi repo không được chọn |
+| Menu chuột phải | Select Repository, Branches…, Fetch, Update Project / Pull…, Push…, Refresh, Open in Integrated Terminal, Reveal in File Explorer, Close Repository |
+| Thêm repo ngoài workspace | Nút **+ Open Repository…** trên thanh tiêu đề view |
+| Ẩn repo khỏi danh sách | **Close Repository**. Lựa chọn được nhớ theo workspace |
+| Hiện lại repo đã ẩn | `…` trên thanh tiêu đề ▸ **Reopen Closed Repositories** |
+
+Khi mở một file trong editor, extension tự chuyển sang repo chứa file đó.
 
 Dữ liệu tự làm mới khi file hoặc thư mục `.git` thay đổi (kể cả khi bạn chạy git từ terminal) và khi cửa sổ VS Code được focus lại. Làm mới thủ công bằng nút ⟳ trên view.
 
@@ -106,6 +132,16 @@ View **Commit** có các nhóm:
 
 Chỉ các file **được tick** mới được commit. Bạn không cần stage: extension tự `git add` và commit đúng các file đã chọn, giống Android Studio.
 
+### Group by
+
+Nút trên thanh tiêu đề view Commit dùng để chuyển cách hiển thị. Lựa chọn được nhớ lại cho lần sau.
+
+- **Danh sách phẳng** (biểu tượng ☰, mặc định): mỗi file một dòng, thư mục hiện mờ bên cạnh tên file.
+- **Group by Directory** (biểu tượng cây):
+  - File được xếp theo cây thư mục. Thư mục chỉ có một nhánh con được gộp thành một dòng, ví dụ `android/app/src/main`.
+  - Checkbox của thư mục tick / bỏ tick mọi file bên trong. Ô hiện trạng thái lưng chừng khi chỉ một phần file được tick.
+  - Click vào dòng thư mục để thu gọn hoặc mở ra.
+
 ### Thao tác
 
 | Thao tác | Cách làm |
@@ -115,6 +151,9 @@ Chỉ các file **được tick** mới được commit. Bạn không cần stag
 | Tick / bỏ tick | Checkbox, hoặc `Space` cho các file đang chọn. Checkbox ở dòng nhóm áp dụng cho cả nhóm |
 | Di chuyển | `↑` / `↓` |
 | Rollback file đang chọn | `Delete`, hoặc chuột phải ▸ **Rollback…** |
+| Đưa file mới vào Git (Add to VCS) | **Kéo file từ Unversioned Files thả vào Changes**, hoặc chuột phải ▸ **Add to VCS**, hoặc `Ctrl+Alt+A`. File chuyển sang nhóm Changes (trạng thái *added*) và được tick sẵn |
+| Bỏ theo dõi file vừa thêm | **Kéo file *added* từ Changes thả về Unversioned Files** (`git rm --cached`, file trên đĩa vẫn giữ nguyên) |
+| Đưa cả thư mục vào Git | Khi **Group by Directory**: kéo **dòng thư mục** trong Unversioned Files thả vào Changes. Mọi file trong thư mục đó, kể cả thư mục con, được thêm vào Git. Thư mục ở Changes chỉ chứa file *added* cũng kéo ngược về được |
 | Commit | Nút **Commit** hoặc `Ctrl+Enter` trong ô message |
 | Commit rồi push | **Commit and Push…** |
 | Sửa commit trước | Tick **Amend**. Nếu ô message đang trống, message cũ được điền sẵn |
@@ -136,6 +175,7 @@ Chỉ các file **được tick** mới được commit. Bạn không cần stag
 - **✨** — sinh commit message bằng AI (xem [mục 10](#10-ai-commit-message)).
 - **Stash Changes…**
 - **⟳ Refresh**
+- **Group by Directory / Group by: None** — xem mục Group by ở trên.
 - Trong menu `…`:
   - Update Project
   - Push
@@ -357,6 +397,7 @@ Vào Settings, tìm `gitTools.ai`:
 | Setting | Mặc định | Mô tả |
 |---|---|---|
 | `gitTools.gitPath` | `git` | Đường dẫn tới git |
+| `gitTools.repositoryScanMaxDepth` | `1` | Số cấp thư mục con được quét để tìm repo con (0 = chỉ thư mục gốc của workspace) |
 | `gitTools.log.maxCommits` | `2000` | Số commit tối đa tải vào Log |
 | `gitTools.autoRefresh` | `true` | Tự làm mới khi file hoặc `.git` thay đổi (cần reload window sau khi đổi) |
 | `gitTools.ai.provider` | `none` | `none` / `claude` / `gemini` |
@@ -380,7 +421,8 @@ Mở Command Palette (`Ctrl+Shift+P`) và gõ `Git Tools`:
 | Resolve Conflicts… / Continue Merge / Rebase / Abort Merge / Rebase | Xử lý merge, rebase |
 | Show Git Log / Show History for Current File | Xem lịch sử |
 | Manage Remotes… | Thêm, sửa URL, xoá remote |
-| Select Repository… | Chọn repo khi có nhiều repo |
+| Select Repository… / Open Repository… / Reopen Closed Repositories | Chọn, thêm hoặc hiện lại repository |
+| Group by Directory / Group by: None (Flat List) | Đổi cách hiển thị trong view Commit |
 | Show Git Console | Xem các lệnh git đã chạy |
 | Refresh | Làm mới |
 | AI Commit Message: Configure… / Set API Key… / Remove API Key… / Test Connection / Setup Guide | Cấu hình AI |
@@ -429,6 +471,7 @@ git_tools/
 │  ├─ commitView.js     view Commit        (media/commit.*)
 │  ├─ logView.js        view Log           (media/log.*)
 │  ├─ branchesTree.js   cây Branches + thanh trạng thái
+│  ├─ repositoriesView.js view Source Control Repositories (media/repos.*)
 │  ├─ mergeTool.js      merge tool 3 cột   (media/merge.*)
 │  ├─ conflicts.js      đọc conflict marker
 │  ├─ diff.js           nội dung file theo revision cho diff editor

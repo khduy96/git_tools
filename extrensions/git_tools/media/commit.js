@@ -68,8 +68,85 @@
       render();
     } else if (e.key === 'Delete' && sel.length) {
       post('menu', { action: 'rollback', paths: sel });
+    } else if ((e.key === 'a' || e.key === 'A') && e.ctrlKey && e.altKey) {
+      // Ctrl+Alt+A: Add to VCS (Android Studio shortcut).
+      e.preventDefault();
+      const untracked = state.changes.filter((c) => selected.has(c.path) && c.type === 'untracked');
+      if (untracked.length) post('addToVcs', { paths: untracked.map((c) => c.path) });
     }
   });
+
+  // ------------------------------------------------------------- drag & drop
+  // Unversioned files dropped on "Changes" are added to git; newly added
+  // files dropped on "Unversioned Files" are removed from the index again.
+
+  /** @type {{from: string, paths: string[]}|null} */
+  let dragging = null;
+
+  const dropAllowed = (to) => !!dragging &&
+    ((dragging.from === 'unversioned' && to === 'changes') || (dragging.from === 'changes' && to === 'unversioned'));
+
+  function clearDropHighlight() {
+    for (const el of tree.querySelectorAll('.drop')) el.classList.remove('drop');
+  }
+
+  function highlight(group) {
+    clearDropHighlight();
+    for (const el of tree.querySelectorAll(`[data-group="${group}"]`)) el.classList.add('drop');
+  }
+
+  tree.addEventListener('dragover', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-group]') : null;
+    const to = target ? target.getAttribute('data-group') : null;
+    if (!to || !dropAllowed(to)) {
+      clearDropHighlight();
+      return;
+    }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    highlight(to);
+  });
+
+  tree.addEventListener('dragleave', (e) => {
+    if (!tree.contains(/** @type {Node} */ (e.relatedTarget))) clearDropHighlight();
+  });
+
+  tree.addEventListener('drop', (e) => {
+    const target = e.target instanceof Element ? e.target.closest('[data-group]') : null;
+    const to = target ? target.getAttribute('data-group') : null;
+    clearDropHighlight();
+    if (!to || !dropAllowed(to)) return;
+    e.preventDefault();
+    post(to === 'changes' ? 'addToVcs' : 'unversion', { paths: dragging.paths });
+    dragging = null;
+  });
+
+  /** Files of group `g` that can be moved to the other group. */
+  const movable = (g, c) => (g.key === 'unversioned' ? c.type === 'untracked' : c.type === 'added');
+
+  function onDragStart(e, g, f) {
+    // Drag the whole selection when the row is part of it.
+    const paths = selected.has(f.path)
+      ? state.changes.filter((c) => selected.has(c.path) && movable(g, c)).map((c) => c.path)
+      : [f.path];
+    startDrag(e, g, paths, paths.length === 1 ? basename(paths[0]) : `${paths.length} files`);
+  }
+
+  /** Dragging a folder moves every file below it. */
+  function onDirDragStart(e, g, d, files) {
+    const paths = files.map((c) => c.path);
+    startDrag(e, g, paths, `${d.name}/ (${paths.length} file${paths.length === 1 ? '' : 's'})`);
+  }
+
+  function startDrag(e, g, paths, label) {
+    dragging = { from: g.key, paths };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', paths.join('\n'));
+    const ghost = h('div.dragghost', { text: label });
+    document.body.append(ghost);
+    e.dataTransfer.setDragImage(ghost, -10, -10);
+    setTimeout(() => ghost.remove(), 0);
+  }
 
   window.addEventListener('message', (e) => {
     const msg = e.data;
@@ -96,8 +173,57 @@
     ].filter((g) => !(g.hideEmpty && !g.files.length));
   }
 
+  /** Files in the order they are rendered (for keyboard navigation). */
+  let order = [];
   function visibleFiles() {
-    return groups().flatMap((g) => (collapsed.has(g.key) ? [] : g.files));
+    return order;
+  }
+
+  /** Builds a directory tree; single-child directory chains are merged ("a/b/c"). */
+  function buildTree(files) {
+    const root = { name: '', path: '', dirs: new Map(), files: [] };
+    for (const f of files) {
+      const dir = dirname(f.path);
+      let node = root;
+      if (dir) {
+        for (const part of dir.split('/')) {
+          if (!node.dirs.has(part)) {
+            node.dirs.set(part, { name: part, path: node.path ? `${node.path}/${part}` : part, dirs: new Map(), files: [] });
+          }
+          node = node.dirs.get(part);
+        }
+      }
+      node.files.push(f);
+    }
+    const compress = (node) => {
+      for (const [key, child] of [...node.dirs]) {
+        let c = child;
+        while (!c.files.length && c.dirs.size === 1) {
+          const only = c.dirs.values().next().value;
+          c = { name: `${c.name}/${only.name}`, path: only.path, dirs: only.dirs, files: only.files };
+        }
+        node.dirs.set(key, c);
+        compress(c);
+      }
+    };
+    compress(root);
+    return root;
+  }
+
+  function filesUnder(node) {
+    return [...node.files, ...[...node.dirs.values()].flatMap(filesUnder)];
+  }
+
+  function checkbox(files) {
+    const n = files.filter((f) => f.included).length;
+    const box = h('input', {
+      type: 'checkbox',
+      checked: files.length > 0 && n === files.length,
+      disabled: !files.length,
+      onchange: (e) => post('toggle', { paths: files.map((f) => f.path), value: e.target.checked }),
+    });
+    if (n > 0 && n < files.length) box.indeterminate = true;
+    return box;
   }
 
   function select(f, ctrl, shift, open) {
@@ -125,6 +251,7 @@
     renderBanner();
     const scroll = tree.scrollTop;
     tree.replaceChildren();
+    order = [];
     if (!state.repo) {
       tree.append(h('div.empty', { text: 'No Git repository found in this workspace.' }));
       return;
@@ -133,6 +260,7 @@
       const isCollapsed = collapsed.has(g.key);
       const n = g.files.filter((f) => f.included).length;
       const header = h('div.row.group', {
+        'data-group': g.key,
         onclick: (e) => {
           if (e.target.tagName === 'INPUT' || e.target.classList.contains('link')) return;
           if (isCollapsed) collapsed.delete(g.key);
@@ -154,40 +282,94 @@
       if (g.checkable && n > 0 && n < g.files.length) header.querySelector('input').indeterminate = true;
       tree.append(header);
       if (!g.files.length && g.key === 'changes') {
-        tree.append(h('div.empty', { text: 'No changes' }));
+        tree.append(h('div.empty', { 'data-group': g.key, text: 'No changes' }));
       }
       if (isCollapsed) continue;
-      for (const f of g.files) {
-        const row = h(`div.row.file${selected.has(f.path) ? '.selected' : ''}`, {
-          'data-path': f.path,
-          title: `${f.type}: ${f.path}${f.oldPath ? ` (from ${f.oldPath})` : ''}`,
-          onclick: (e) => {
-            if (e.target.tagName === 'INPUT') return;
-            tree.focus();
-            select(f, e.ctrlKey || e.metaKey, e.shiftKey, true);
-          },
-          ondblclick: () => post(f.type === 'conflicted' ? 'resolve' : 'open', { path: f.path, preview: false }),
-          oncontextmenu: (e) => {
-            e.preventDefault();
-            if (!selected.has(f.path)) select(f, false, false, false);
-            contextMenu(e.clientX, e.clientY);
-          },
-        },
-        g.checkable ? h('input', {
-          type: 'checkbox',
-          checked: f.included,
-          onchange: (e) => {
-            const paths = selected.has(f.path) && selected.size > 1 ? [...selected] : [f.path];
-            post('toggle', { paths, value: e.target.checked });
-          },
-        }) : h('span.nocheck'),
-        h(`span.name.t-${f.type}`, { text: basename(f.path) }),
-        h('span.dir.muted.ellipsis', { text: f.oldPath ? `← ${f.oldPath}` : dirname(f.path) }));
-        tree.append(row);
+      if (state.groupBy === 'directory') {
+        renderDir(g, buildTree(g.files), 0);
+      } else {
+        for (const f of g.files) renderFile(g, f, 0);
       }
     }
     tree.scrollTop = scroll;
+    renderBottom();
+  }
 
+  function renderDir(g, node, depth) {
+    const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
+    for (const d of dirs) {
+      const key = `${g.key}:${d.path}`;
+      const isCollapsed = collapsed.has(key);
+      const files = filesUnder(d);
+      // A folder can be dragged when every file below it can move groups.
+      const draggable = files.length > 0 && files.every((c) => movable(g, c)) &&
+        (g.key === 'unversioned' || g.key === 'changes');
+      tree.append(h('div.row.dir', {
+        'data-group': g.key,
+        style: { paddingLeft: `${24 + depth * 14}px` },
+        draggable: draggable ? 'true' : null,
+        ondragstart: draggable ? (e) => onDirDragStart(e, g, d, files) : null,
+        ondragend: draggable ? () => { dragging = null; clearDropHighlight(); } : null,
+        title: `${d.path}${draggable ? (g.key === 'unversioned'
+          ? '\nDrag to "Changes" to add the whole folder to Git'
+          : '\nDrag to "Unversioned Files" to unversion the whole folder') : ''}`,
+        onclick: (e) => {
+          if (e.target.tagName === 'INPUT') return;
+          if (isCollapsed) collapsed.delete(key);
+          else collapsed.add(key);
+          persist();
+          render();
+        },
+      },
+      h('span.chev', { text: isCollapsed ? '▸' : '▾' }),
+      g.checkable ? checkbox(files) : null,
+      h('span.folder'),
+      h('span.dname.ellipsis', { text: d.name }),
+      h('span.muted', { text: String(files.length) })));
+      if (!isCollapsed) renderDir(g, d, depth + 1);
+    }
+    for (const f of node.files) renderFile(g, f, depth);
+  }
+
+  function renderFile(g, f, depth) {
+    order.push(f);
+    const flat = state.groupBy !== 'directory';
+    // In directory mode files line up with the checkbox of sibling folders.
+    const draggable = (g.key === 'unversioned' && f.type === 'untracked') || (g.key === 'changes' && f.type === 'added');
+    tree.append(h(`div.row.file${selected.has(f.path) ? '.selected' : ''}`, {
+      style: { paddingLeft: `${24 + depth * 14 + (flat ? 0 : 16)}px` },
+      'data-path': f.path,
+      'data-group': g.key,
+      draggable: draggable ? 'true' : null,
+      ondragstart: draggable ? (e) => onDragStart(e, g, f) : null,
+      ondragend: draggable ? () => { dragging = null; clearDropHighlight(); } : null,
+      title: `${f.type}: ${f.path}${f.oldPath ? ` (from ${f.oldPath})` : ''}${
+        g.key === 'unversioned' ? '\nDrag to "Changes" to add to Git' : f.type === 'added' ? '\nDrag to "Unversioned Files" to unversion' : ''}`,
+      onclick: (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        tree.focus();
+        select(f, e.ctrlKey || e.metaKey, e.shiftKey, true);
+      },
+      ondblclick: () => post(f.type === 'conflicted' ? 'resolve' : 'open', { path: f.path, preview: false }),
+      oncontextmenu: (e) => {
+        e.preventDefault();
+        if (!selected.has(f.path)) select(f, false, false, false);
+        contextMenu(e.clientX, e.clientY);
+      },
+    },
+    g.checkable ? h('input', {
+      type: 'checkbox',
+      checked: f.included,
+      onchange: (e) => {
+        const paths = selected.has(f.path) && selected.size > 1 ? [...selected] : [f.path];
+        post('toggle', { paths, value: e.target.checked });
+      },
+    }) : h('span.nocheck'),
+    h(`span.name.t-${f.type}`, { text: basename(f.path) }),
+    h('span.dir.muted.ellipsis', { text: f.oldPath ? `← ${f.oldPath}` : flat ? dirname(f.path) : '' })));
+  }
+
+  function renderBottom() {
     amend.checked = !!state.amend;
     amend.disabled = !state.hasCommits;
     if (!messageFocused || state.generating) {
@@ -242,6 +424,9 @@
       { label: 'Exclude from Commit', id: 'exclude' },
       '-',
       { label: 'Rollback…', id: 'rollback', disabled: !anyTracked });
+    if (sel.some((c) => c.type === 'untracked')) {
+      items.push({ label: 'Add to VCS    Ctrl+Alt+A', id: 'addToVcs' });
+    }
     if (allUntracked) {
       items.push({ label: 'Delete…', id: 'delete', danger: true }, { label: 'Add to .gitignore', id: 'ignore' });
     }

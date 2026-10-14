@@ -2,6 +2,7 @@
 'use strict';
 
 const vscode = require('vscode');
+const fs = require('fs');
 const path = require('path');
 const { Repository, GitError } = require('./git');
 const { layoutGraph } = require('./graph');
@@ -64,6 +65,9 @@ class RepoModel {
     this._refsDirty = false;
     this._logGen = 0;
     this._started = false;
+    /** True once refs and log are loaded (repository was selected). */
+    this._full = false;
+    this._watching = false;
   }
 
   get root() {
@@ -87,6 +91,7 @@ class RepoModel {
   }
 
   async start() {
+    this._full = true;
     await this.refreshAll();
     const msg = await this.repo.pendingMergeMessage().catch(() => null);
     if (msg && !this.message) {
@@ -94,6 +99,12 @@ class RepoModel {
       this._prefilled = msg;
       this.fire('message');
     }
+    this.watch();
+  }
+
+  /** Status only, for repositories that are listed but not selected. */
+  async startLight() {
+    await this.refreshStatus();
     this.watch();
   }
 
@@ -105,7 +116,8 @@ class RepoModel {
   // ------------------------------------------------------------- watching
 
   watch() {
-    if (!vscode.workspace.getConfiguration('gitTools').get('autoRefresh')) return;
+    if (this._watching || !vscode.workspace.getConfiguration('gitTools').get('autoRefresh')) return;
+    this._watching = true;
     const onFile = (uri) => {
       const rel = path.relative(this.root, uri.fsPath).replace(/\\/g, '/');
       if (rel.startsWith('..')) return;
@@ -137,7 +149,7 @@ class RepoModel {
     this._timer = setTimeout(() => {
       this._timer = null;
       if (this.busy) return; // refreshed when the operation ends
-      if (this._refsDirty) {
+      if (this._refsDirty && this._full) {
         this._refsDirty = false;
         this.refreshAll();
       } else {
@@ -329,11 +341,23 @@ class RepoModel {
 /**
  * Tracks the repositories of the workspace and which one is active.
  */
+const SCAN_SKIP = new Set(['node_modules', '.dart_tool', 'build', '.gradle', '.idea', '.vscode', 'Pods', 'dist', 'out', '.git']);
+
+/** Map key for a repository root (case-insensitive on Windows). */
+const keyOf = (root) => (process.platform === 'win32' ? root.toLowerCase() : root);
+
+/**
+ * Tracks the repositories of the workspace and which one is active.
+ */
 class RepoManager {
-  /** @param {vscode.OutputChannel} output */
-  constructor(output) {
+  /**
+   * @param {vscode.OutputChannel} output
+   * @param {vscode.Memento} [state] workspace state for opened / closed repositories
+   */
+  constructor(output, state) {
     this.output = output;
-    /** @type {Map<string, RepoModel>} */
+    this.state = state;
+    /** @type {Map<string, RepoModel>} keyed by keyOf(root) */
     this.models = new Map();
     /** @type {RepoModel|null} */
     this.current = null;
@@ -342,29 +366,95 @@ class RepoManager {
     /** Forwards change events of the current model. */
     this._onDidChange = new vscode.EventEmitter();
     this.onDidChange = this._onDidChange.event;
+    /** Fires when any repository changes or the list changes. */
+    this._onDidChangeRepositories = new vscode.EventEmitter();
+    this.onDidChangeRepositories = this._onDidChangeRepositories.event;
     this._sub = null;
+    this._discovering = null;
   }
 
+  /** Repositories sorted by name. */
+  list() {
+    return [...this.models.values()].sort((a, b) => a.name.localeCompare(b.name) || a.root.localeCompare(b.root));
+  }
+
+  get(root) {
+    return this.models.get(keyOf(root)) || null;
+  }
+
+  _stored(name) {
+    return this.state ? this.state.get(name, []) : [];
+  }
+
+  async _store(name, list) {
+    if (this.state) await this.state.update(name, [...new Set(list)]);
+  }
+
+  /** Finds repositories in the workspace folders and their sub folders. */
   async discover() {
-    const gitPath = vscode.workspace.getConfiguration('gitTools').get('gitPath') || 'git';
-    const roots = new Set();
-    for (const f of vscode.workspace.workspaceFolders || []) {
-      const root = await Repository.findRoot(f.uri.fsPath, gitPath);
-      if (root) roots.add(root);
-    }
-    for (const root of roots) {
-      if (!this.models.has(root)) this.models.set(root, new RepoModel(root, this.output));
-    }
-    for (const [root, m] of this.models) {
-      if (!roots.has(root)) {
-        m.dispose();
-        this.models.delete(root);
+    if (this._discovering) return this._discovering;
+    this._discovering = this._discover().finally(() => { this._discovering = null; });
+    return this._discovering;
+  }
+
+  async _discover() {
+    const cfg = vscode.workspace.getConfiguration('gitTools');
+    const gitPath = cfg.get('gitPath') || 'git';
+    const depth = Math.max(0, Number(cfg.get('repositoryScanMaxDepth', 1)));
+    const candidates = [];
+    const scan = (dir, level) => {
+      if (level > depth) return;
+      let entries = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
       }
+      for (const e of entries) {
+        if (!e.isDirectory() || SCAN_SKIP.has(e.name)) continue;
+        const child = path.join(dir, e.name);
+        if (fs.existsSync(path.join(child, '.git'))) candidates.push(child);
+        scan(child, level + 1);
+      }
+    };
+    for (const f of vscode.workspace.workspaceFolders || []) {
+      candidates.push(f.uri.fsPath);
+      scan(f.uri.fsPath, 1);
     }
-    if (!this.current || !this.models.has(this.current.root)) {
-      const first = this.models.values().next().value || null;
-      await this.setCurrent(first);
+    candidates.push(...this._stored('gitTools.openedRepos'));
+
+    const closed = new Set(this._stored('gitTools.closedRepos').map(keyOf));
+    const roots = new Map();
+    for (const dir of candidates) {
+      const root = await Repository.findRoot(dir, gitPath);
+      if (root && !closed.has(keyOf(root))) roots.set(keyOf(root), root);
     }
+
+    for (const [key, root] of roots) {
+      if (!this.models.has(key)) this._add(root);
+    }
+    for (const [key, m] of this.models) {
+      if (!roots.has(key)) this._remove(m);
+    }
+    if (!this.current || !this.models.has(keyOf(this.current.root))) {
+      await this.setCurrent(this.list()[0] || null);
+    }
+    this._onDidChangeRepositories.fire(undefined);
+  }
+
+  _add(root) {
+    const m = new RepoModel(root, this.output);
+    this.models.set(keyOf(root), m);
+    m.disposables.push(m.onDidChange((w) => {
+      if (w === 'status' || w === 'busy' || w === 'refs') this._onDidChangeRepositories.fire(undefined);
+    }));
+    m.startLight();
+    return m;
+  }
+
+  _remove(m) {
+    this.models.delete(keyOf(m.root));
+    m.dispose();
   }
 
   /** @param {RepoModel|null} m */
@@ -373,6 +463,7 @@ class RepoManager {
     if (this._sub) this._sub.dispose();
     this.current = m;
     this._sub = m ? m.onDidChange((w) => this._onDidChange.fire(w)) : null;
+    this._onDidChangeRepositories.fire(undefined);
     if (m && !m._started) {
       m._started = true;
       await m.start();
@@ -381,17 +472,36 @@ class RepoManager {
   }
 
   /** Adds a repository by folder path (e.g. opened through the picker). */
-  async open(dir) {
+  async open(dir, select = true) {
     const gitPath = vscode.workspace.getConfiguration('gitTools').get('gitPath') || 'git';
     const root = await Repository.findRoot(dir, gitPath);
     if (!root) return null;
-    let m = this.models.get(root);
-    if (!m) {
-      m = new RepoModel(root, this.output);
-      this.models.set(root, m);
-    }
-    await this.setCurrent(m);
+    await this._store('gitTools.closedRepos', this._stored('gitTools.closedRepos').filter((r) => keyOf(r) !== keyOf(root)));
+    const inWorkspace = (vscode.workspace.workspaceFolders || []).some((f) => keyOf(f.uri.fsPath) === keyOf(root));
+    if (!inWorkspace) await this._store('gitTools.openedRepos', [...this._stored('gitTools.openedRepos'), root]);
+    const m = this.get(root) || this._add(root);
+    if (select) await this.setCurrent(m);
+    this._onDidChangeRepositories.fire(undefined);
     return m;
+  }
+
+  /** Hides a repository from the list (remembered for this workspace). */
+  async close(m) {
+    await this._store('gitTools.openedRepos', this._stored('gitTools.openedRepos').filter((r) => keyOf(r) !== keyOf(m.root)));
+    await this._store('gitTools.closedRepos', [...this._stored('gitTools.closedRepos'), m.root]);
+    const wasCurrent = this.current === m;
+    this._remove(m);
+    if (wasCurrent) {
+      this.current = null;
+      await this.setCurrent(this.list()[0] || null);
+    }
+    this._onDidChangeRepositories.fire(undefined);
+  }
+
+  /** Re-shows repositories closed earlier. */
+  async reopenClosed() {
+    await this._store('gitTools.closedRepos', []);
+    await this.discover();
   }
 
   dispose() {
@@ -399,6 +509,7 @@ class RepoManager {
     if (this._sub) this._sub.dispose();
     this._onDidChange.dispose();
     this._onDidChangeCurrent.dispose();
+    this._onDidChangeRepositories.dispose();
   }
 }
 

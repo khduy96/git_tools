@@ -59,6 +59,53 @@ test('status, partial commit and glob characters in names', async () => {
   }
 });
 
+test('add to VCS and unversion (drag & drop between groups)', async () => {
+  const r = tempRepo();
+  try {
+    r.write('a.txt', 'a\n');
+    await r.repo.commit({ message: 'init', paths: ['a.txt'] });
+    r.write('new [1].txt', 'n\n');
+    let s = await r.repo.status();
+    assert.deepEqual(s.changes.map((c) => [c.path, c.type]), [['new [1].txt', 'untracked']]);
+    // Drop on "Changes": git add (literal pathspec).
+    await r.repo.git.run(['add', '--', ':(literal)new [1].txt']);
+    s = await r.repo.status();
+    assert.deepEqual(s.changes.map((c) => [c.path, c.type]), [['new [1].txt', 'added']]);
+    // Drop back on "Unversioned Files": git rm --cached keeps the file.
+    await r.repo.git.run(['rm', '--cached', '-q', '--', ':(literal)new [1].txt']);
+    s = await r.repo.status();
+    assert.deepEqual(s.changes.map((c) => [c.path, c.type]), [['new [1].txt', 'untracked']]);
+    assert.ok(fs.existsSync(path.join(r.dir, 'new [1].txt')));
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('dragging a whole folder: add and unversion many files via stdin', async () => {
+  const r = tempRepo();
+  try {
+    r.write('a.txt', 'a\n');
+    await r.repo.commit({ message: 'init', paths: ['a.txt'] });
+    const paths = [];
+    for (let i = 0; i < 1500; i++) {
+      const p = `assets/generated folder/sub ${i % 7}/file [${i}].txt`;
+      r.write(p, `${i}\n`);
+      paths.push(p);
+    }
+    const spec = `${paths.map((p) => `:(literal)${p}`).join('\0')}\0`;
+    await r.repo.git.run(['add', '--pathspec-from-file=-', '--pathspec-file-nul'], { stdin: spec });
+    let s = await r.repo.status();
+    assert.equal(s.changes.length, 1500);
+    assert.ok(s.changes.every((c) => c.type === 'added'));
+    await r.repo.git.run(['rm', '--cached', '-q', '--pathspec-from-file=-', '--pathspec-file-nul'], { stdin: spec });
+    s = await r.repo.status();
+    assert.equal(s.changes.length, 1500);
+    assert.ok(s.changes.every((c) => c.type === 'untracked'));
+  } finally {
+    r.cleanup();
+  }
+});
+
 test('rename detection and rollback', async () => {
   const r = tempRepo();
   try {

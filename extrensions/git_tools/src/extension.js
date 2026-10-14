@@ -8,6 +8,7 @@ const { RevisionContentProvider, SCHEME } = require('./diff');
 const { CommitViewProvider } = require('./commitView');
 const { LogViewProvider } = require('./logView');
 const { BranchesTreeProvider, BranchStatusBar } = require('./branchesTree');
+const { RepositoriesViewProvider } = require('./repositoriesView');
 const { AiController } = require('./aiCommands');
 const { openMergeTool } = require('./mergeTool');
 const { showSetupGuide } = require('./guide');
@@ -16,7 +17,7 @@ const cmd = require('./commands');
 /** @param {vscode.ExtensionContext} context */
 async function activate(context) {
   const output = vscode.window.createOutputChannel('Git Tools');
-  const manager = new RepoManager(output);
+  const manager = new RepoManager(output, context.workspaceState);
   const ai = new AiController(context, manager);
   const commitView = new CommitViewProvider(context, manager, ai);
   const logView = new LogViewProvider(context, manager);
@@ -31,12 +32,16 @@ async function activate(context) {
     vscode.window.registerWebviewViewProvider('gitTools.commit', commitView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerWebviewViewProvider('gitTools.log', logView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerTreeDataProvider('gitTools.branches', branches),
+    vscode.window.registerWebviewViewProvider('gitTools.repositories', new RepositoriesViewProvider(context, manager)),
     vscode.workspace.onDidChangeWorkspaceFolders(() => manager.discover()),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('gitTools.repositoryScanMaxDepth')) manager.discover();
+    }),
     vscode.window.onDidChangeActiveTextEditor((e) => {
       // Follow the repository of the active file when several are open.
       if (!e || e.document.uri.scheme !== 'file' || manager.models.size < 2) return;
       const file = e.document.uri.fsPath.toLowerCase();
-      const best = [...manager.models.values()]
+      const best = manager.list()
         .filter((m) => file.startsWith(m.root.toLowerCase() + path.sep))
         .sort((a, b) => b.root.length - a.root.length)[0];
       if (best && best !== manager.current) manager.setCurrent(best);
@@ -50,17 +55,47 @@ async function activate(context) {
       .then((r) => { if (r) vscode.commands.executeCommand('gitTools.selectRepository'); });
     return m;
   };
-  /** Registers a command that needs the current repository. */
+  /**
+   * Registers a command that needs a repository: the one of a Source Control
+   * Repositories item when invoked from there, otherwise the current one.
+   */
   const reg = (id, fn) => context.subscriptions.push(vscode.commands.registerCommand(id, async (...args) => {
-    const m = need();
-    if (m) return fn(m, ...args);
+    const fromItem = args[0] && args[0].model;
+    const m = fromItem || need();
+    if (m) return fn(m, ...(fromItem ? args.slice(1) : args));
   }));
   const regFree = (id, fn) => context.subscriptions.push(vscode.commands.registerCommand(id, fn));
 
-  regFree('gitTools.refresh', async () => {
+  regFree('gitTools.refresh', async (node) => {
+    if (node && node.model) return node.model._full ? node.model.refreshAll() : node.model.refreshStatus();
     await manager.discover();
     if (manager.current) await manager.current.refreshAll();
   });
+
+  // Source Control Repositories.
+  regFree('gitTools.repo.select', (node) => node && node.model && manager.setCurrent(node.model));
+  regFree('gitTools.repo.open', async () => {
+    const dir = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: 'Open Repository' });
+    if (!dir) return;
+    if (!(await manager.open(dir[0].fsPath))) vscode.window.showErrorMessage(`${dir[0].fsPath} is not inside a Git repository.`);
+  });
+  regFree('gitTools.repo.close', async (node) => {
+    const m = (node && node.model) || manager.current;
+    if (m) await manager.close(m);
+  });
+  regFree('gitTools.repo.reopenClosed', () => manager.reopenClosed());
+  regFree('gitTools.repo.openTerminal', (node) => {
+    const m = (node && node.model) || manager.current;
+    if (m) vscode.window.createTerminal({ name: m.name, cwd: m.root }).show();
+  });
+  regFree('gitTools.repo.revealInOS', (node) => {
+    const m = (node && node.model) || manager.current;
+    if (m) vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(m.root));
+  });
+
+  // Commit view grouping.
+  regFree('gitTools.commit.groupByDirectory', () => commitView.setGroupBy('directory'));
+  regFree('gitTools.commit.groupByNone', () => commitView.setGroupBy('none'));
   regFree('gitTools.selectRepository', async () => {
     const items = [...manager.models.values()].map((m) => ({ label: `$(repo) ${m.name}`, description: m.root, model: m }));
     const pick = /** @type {any} */ (await vscode.window.showQuickPick(

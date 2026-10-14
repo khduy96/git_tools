@@ -20,7 +20,7 @@ class RevisionContentProvider {
   async provideTextDocumentContent(uri) {
     const q = JSON.parse(uri.query);
     if (q.rev === EMPTY) return '';
-    const model = this.manager.models.get(q.root);
+    const model = this.manager.get(q.root);
     if (!model) return '';
     const bytes = await model.repo.show(q.rev, q.path);
     if (!bytes) return '';

@@ -28,6 +28,17 @@ class CommitViewProvider {
     });
     manager.onDidChangeCurrent(() => this.postState());
     ai.onDidChange(() => this.postState());
+    /** @type {'none'|'directory'} */
+    this.groupBy = context.globalState.get('gitTools.commit.groupBy', 'none');
+    vscode.commands.executeCommand('setContext', 'gitTools.commitGroupBy', this.groupBy);
+  }
+
+  /** @param {'none'|'directory'} value */
+  setGroupBy(value) {
+    this.groupBy = value;
+    this.context.globalState.update('gitTools.commit.groupBy', value);
+    vscode.commands.executeCommand('setContext', 'gitTools.commitGroupBy', value);
+    this.postState();
   }
 
   /** @param {vscode.WebviewView} view */
@@ -54,10 +65,13 @@ class CommitViewProvider {
   postState() {
     if (!this.view) return;
     const m = this.manager.current;
+    this.view.description = m && this.manager.models.size > 1 ? m.name : undefined;
     this.view.webview.postMessage({
       type: 'state',
       state: m ? {
         repo: m.name,
+        multiRepo: this.manager.models.size > 1,
+        groupBy: this.groupBy,
         repoState: m.status.state,
         hasCommits: !!m.status.head,
         changes: m.status.changes.map((c) => ({ ...c, included: c.type !== 'conflicted' && m.isIncluded(c) })),
@@ -67,7 +81,7 @@ class CommitViewProvider {
         generating: this.ai.generating,
         aiReady: this.ai.isConfigured(),
         aiModel: this.ai.model(),
-      } : { repo: null, repoState: 'normal', changes: [], message: '' },
+      } : { repo: null, groupBy: this.groupBy, repoState: 'normal', changes: [], message: '' },
     });
   }
 
@@ -113,6 +127,10 @@ class CommitViewProvider {
         return vscode.commands.executeCommand('gitTools.abortOperation');
       case 'menu':
         return this.menuAction(m, msg.action, changes);
+      case 'addToVcs':
+        return cmd.addToVcs(m, changes);
+      case 'unversion':
+        return cmd.unversion(m, changes);
     }
   }
 
@@ -136,6 +154,8 @@ class CommitViewProvider {
         return cmd.deleteUntracked(m, changes);
       case 'ignore':
         return cmd.addToGitignore(m, changes);
+      case 'addToVcs':
+        return cmd.addToVcs(m, changes);
       case 'history':
         m.setLogFilter({ path: first.path, branch: null });
         return vscode.commands.executeCommand('gitTools.log.focus');
