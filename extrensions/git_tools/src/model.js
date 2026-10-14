@@ -51,6 +51,11 @@ class RepoModel {
     this.excludedTracked = new Set();
     /** @type {Set<string>} */
     this.includedUntracked = new Set();
+    /**
+     * Files committed partially: path → excluded line keys of its diff.
+     * @type {Map<string, {signature: string, excluded: Set<string>, total: number}>}
+     */
+    this.lineSelections = new Map();
 
     /** @type {string|null} */
     this.busy = null;
@@ -172,6 +177,10 @@ class RepoModel {
       const paths = new Set(this.status.changes.map((c) => c.path));
       for (const p of [...this.excludedTracked]) if (!paths.has(p)) this.excludedTracked.delete(p);
       for (const p of [...this.includedUntracked]) if (!paths.has(p)) this.includedUntracked.delete(p);
+      for (const p of [...this.lineSelections.keys()]) {
+        const c = this.status.changes.find((x) => x.path === p);
+        if (!this.canSelectLines(c)) this.lineSelections.delete(p);
+      }
       // Prefill the prepared message when a merge / cherry-pick starts and
       // clear it again when the operation ends elsewhere.
       if (previous === 'normal' && this.status.state !== 'normal' && !this.message.trim()) {
@@ -245,6 +254,8 @@ class RepoModel {
     for (const p of paths) {
       const c = byPath.get(p);
       if (!c || c.type === 'conflicted') continue;
+      // Ticking / unticking the whole file drops a line selection.
+      this.lineSelections.delete(p);
       if (c.type === 'untracked') {
         if (value) this.includedUntracked.add(p);
         else this.includedUntracked.delete(p);
@@ -260,6 +271,57 @@ class RepoModel {
 
   setMessage(text) {
     this.message = text;
+  }
+
+  // ------------------------------------------------------------- line selection
+
+  /** Whether lines of this change can be selected individually. */
+  canSelectLines(c) {
+    return !!c && c.type === 'modified' && !!this.status.head;
+  }
+
+  /**
+   * Stores which changed lines of `filePath` are left out of the commit.
+   * An empty set means the whole file; all keys excluded means nothing.
+   * @param {string} filePath
+   * @param {string} signature diff signature the keys belong to
+   * @param {string[]} excluded
+   * @param {number} total number of changed lines
+   */
+  setLineSelection(filePath, signature, excluded, total) {
+    if (!excluded.length) {
+      this.lineSelections.delete(filePath);
+      this.excludedTracked.delete(filePath);
+    } else if (excluded.length >= total) {
+      this.lineSelections.delete(filePath);
+      this.excludedTracked.add(filePath);
+    } else {
+      this.lineSelections.set(filePath, { signature, excluded: new Set(excluded), total });
+      this.excludedTracked.delete(filePath);
+    }
+    this.fire('status');
+  }
+
+  /**
+   * Content to commit for every included file with a line selection.
+   * Throws when a file changed since its lines were selected.
+   */
+  async selectedContents() {
+    const { parseDiff, buildContent } = require('./lineSelection');
+    const result = [];
+    for (const c of this.includedChanges()) {
+      const sel = this.lineSelections.get(c.path);
+      if (!sel) continue;
+      const parsed = parseDiff(await this.repo.fileDiff(c.path));
+      if (parsed.signature !== sel.signature) {
+        const err = new Error(`${c.path} changed after its lines were selected. Review the selection again.`);
+        /** @type {any} */ (err).path = c.path;
+        throw err;
+      }
+      const head = await this.repo.show('HEAD', c.path);
+      result.push({ path: c.path, content: buildContent(head ? head.toString('utf8') : '', parsed, sel.excluded), parsed, sel });
+    }
+    return result;
   }
 
   // ------------------------------------------------------------- operations
@@ -313,10 +375,33 @@ class RepoModel {
       return false;
     }
     const paths = [...new Set(changes.flatMap((c) => (c.oldPath ? [c.path, c.oldPath] : [c.path])))];
-    const ok = await this.run(this.amend ? 'Amend commit' : 'Commit', () => this.repo.commit({
-      message, paths, amend: this.amend, signOff, partial: !inOperation,
-    }), {
-      success: this.amend ? 'Commit amended' : `${changes.length} file(s) committed`,
+    const hasLines = changes.some((c) => this.lineSelections.has(c.path));
+    if (hasLines && inOperation) {
+      vscode.window.showWarningMessage('Selecting individual lines is not possible while a merge or rebase is in progress. Include whole files instead.');
+      return false;
+    }
+    let partial = [];
+    if (hasLines) {
+      try {
+        partial = await this.selectedContents();
+      } catch (e) {
+        const r = await vscode.window.showWarningMessage(e.message, 'Select Lines…');
+        if (r && e.path) vscode.commands.executeCommand('gitTools.selectLines', { model: this, path: e.path });
+        return false;
+      }
+    }
+    const partialPaths = new Set(partial.map((p) => p.path));
+    const ok = await this.run(this.amend ? 'Amend commit' : 'Commit', () => (hasLines
+      ? this.repo.commitSelected({
+        message,
+        fullPaths: paths.filter((p) => !partialPaths.has(p)),
+        partial: partial.map((p) => ({ path: p.path, content: p.content })),
+        amend: this.amend,
+        signOff,
+      })
+      : this.repo.commit({ message, paths, amend: this.amend, signOff, partial: !inOperation })), {
+      success: this.amend ? 'Commit amended'
+        : `${changes.length} file(s) committed${partial.length ? ` (${partial.length} partially)` : ''}`,
     });
     if (ok) {
       this.message = '';
@@ -324,6 +409,7 @@ class RepoModel {
       this.amend = false;
       this.excludedTracked.clear();
       this.includedUntracked.clear();
+      this.lineSelections.clear();
       this.fire('message');
       if (push) await vscode.commands.executeCommand('gitTools.push');
     }

@@ -59,7 +59,7 @@ class GitRunner {
 
   /**
    * @param {string[]} args
-   * @param {{log?: boolean, stdin?: string, allowFailure?: boolean, binary?: boolean}} [o]
+   * @param {{log?: boolean, stdin?: string, allowFailure?: boolean, binary?: boolean, env?: Record<string,string>}} [o]
    * @returns {Promise<{code: number, stdout: string, stderr: string, bytes: Buffer}>}
    */
   raw(args, o = {}) {
@@ -67,7 +67,7 @@ class GitRunner {
     return new Promise((resolve, reject) => {
       const child = spawn(this.gitPath, [...GLOBAL_ARGS, ...args], {
         cwd: this.cwd,
-        env: { ...process.env, ...ENV },
+        env: { ...process.env, ...ENV, ...(o.env || {}) },
         windowsHide: true,
       });
       /** @type {Buffer[]} */
@@ -101,7 +101,7 @@ class GitRunner {
   /**
    * Runs git and returns stdout; throws GitError on failure.
    * @param {string[]} args
-   * @param {{log?: boolean, stdin?: string, allowFailure?: boolean}} [o]
+   * @param {{log?: boolean, stdin?: string, allowFailure?: boolean, env?: Record<string,string>}} [o]
    */
   async run(args, o = {}) {
     const r = await this.raw(args, o);
@@ -510,6 +510,57 @@ class Repository {
       await this.git.run(args, { stdin: partial && o.paths.length ? spec : undefined, log: true });
     } finally {
       try { fs.unlinkSync(msgFile); } catch { /* ignore */ }
+    }
+  }
+
+  /** Diff of one tracked file: HEAD → working tree. */
+  async fileDiff(filePath) {
+    return this.git.run(['diff', '--no-color', '--no-ext-diff', 'HEAD', '--', lit(filePath)]);
+  }
+
+  /**
+   * Commits through a temporary index, so only the given content is
+   * committed and the user's real index is left alone (hooks still run).
+   *   fullPaths: committed as they are in the working tree
+   *   partial:   [{path, content}] committed with exactly this content
+   * @param {{message: string, fullPaths: string[], partial: {path: string, content: string}[], amend?: boolean, signOff?: boolean}} o
+   */
+  async commitSelected(o) {
+    const os = require('os');
+    const dir = await this.gitDir();
+    const tmpIndex = path.join(dir, `gittools-index-${process.pid}-${Date.now()}`);
+    const msgFile = path.join(os.tmpdir(), `git_tools_msg_${Date.now()}_${process.pid}.txt`);
+    fs.writeFileSync(msgFile, o.message, 'utf8');
+    const env = { GIT_INDEX_FILE: tmpIndex };
+    const hasHead = await this.refExists('HEAD');
+    const allPaths = [...o.fullPaths, ...o.partial.map((p) => p.path)];
+    try {
+      await this.git.run(hasHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], { env, log: true });
+      if (o.fullPaths.length) {
+        await this.git.run(['add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'],
+          { env, stdin: `${o.fullPaths.map(lit).join('\0')}\0`, log: true });
+      }
+      for (const p of o.partial) {
+        // --path applies the clean filters (e.g. CRLF → LF) like `git add`.
+        const sha = (await this.git.run(['hash-object', '-w', '--stdin', `--path=${p.path}`], { stdin: p.content })).trim();
+        const ls = hasHead ? (await this.git.run(['ls-tree', 'HEAD', '--', lit(p.path)])).trim() : '';
+        const mode = ls ? ls.split(/\s/)[0] : '100644';
+        await this.git.run(['update-index', '--add', '--cacheinfo', `${mode},${sha},${p.path}`], { env, log: true });
+      }
+      const args = ['commit', '-F', msgFile];
+      if (o.amend) args.push('--amend');
+      if (o.signOff) args.push('--signoff');
+      await this.git.run(args, { env, log: true });
+      // Sync the real index for the committed paths with the new HEAD; the
+      // unselected lines stay as unstaged changes in the working tree.
+      if (allPaths.length) {
+        await this.git.run(['reset', '-q', '--pathspec-from-file=-', '--pathspec-file-nul'],
+          { stdin: `${allPaths.map(lit).join('\0')}\0`, log: true });
+      }
+    } finally {
+      for (const f of [tmpIndex, `${tmpIndex}.lock`, msgFile]) {
+        try { fs.rmSync(f, { force: true }); } catch { /* ignore */ }
+      }
     }
   }
 

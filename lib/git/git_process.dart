@@ -76,8 +76,9 @@ class GitProcess {
     bool log = false,
     bool allowFailure = false,
     String? stdin,
+    Map<String, String>? env,
   }) async {
-    final r = await runRaw(args, log: log, stdin: stdin);
+    final r = await runRaw(args, log: log, stdin: stdin, env: env);
     if (r.exitCode != 0 && !allowFailure) {
       throw GitException(args, r.exitCode, r.stderr, r.stdout);
     }
@@ -88,13 +89,14 @@ class GitProcess {
     List<String> args, {
     bool log = false,
     String? stdin,
+    Map<String, String>? env,
   }) async {
     if (log) _emit('git ${args.map(_quote).join(' ')}', ConsoleKind.command);
     final process = await Process.start(
       'git',
       [..._globalArgs, ...args],
       workingDirectory: workingDirectory,
-      environment: _env,
+      environment: env == null ? _env : {..._env, ...env},
       runInShell: false,
     );
     if (stdin != null) {

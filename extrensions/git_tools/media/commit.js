@@ -357,16 +357,31 @@
         contextMenu(e.clientX, e.clientY);
       },
     },
-    g.checkable ? h('input', {
+    g.checkable ? fileCheckbox(f) : h('span.nocheck'),
+    h(`span.name.t-${f.type}`, { text: basename(f.path) }),
+    f.lines ? h('span.partial', {
+      text: `${f.lines.selected}/${f.lines.total} lines`,
+      title: 'Only some lines are committed. Click to change the selection.',
+      onclick: (e) => {
+        e.stopPropagation();
+        post('menu', { action: 'selectLines', paths: [f.path] });
+      },
+    }) : null,
+    h('span.dir.muted.ellipsis', { text: f.oldPath ? `← ${f.oldPath}` : flat ? dirname(f.path) : '' })));
+  }
+
+  /** File checkbox; half-checked when only some lines are committed. */
+  function fileCheckbox(f) {
+    const box = h('input', {
       type: 'checkbox',
       checked: f.included,
       onchange: (e) => {
         const paths = selected.has(f.path) && selected.size > 1 ? [...selected] : [f.path];
         post('toggle', { paths, value: e.target.checked });
       },
-    }) : h('span.nocheck'),
-    h(`span.name.t-${f.type}`, { text: basename(f.path) }),
-    h('span.dir.muted.ellipsis', { text: f.oldPath ? `← ${f.oldPath}` : flat ? dirname(f.path) : '' })));
+    });
+    if (f.lines) box.indeterminate = true;
+    return box;
   }
 
   function renderBottom() {
@@ -420,6 +435,7 @@
     ];
     if (anyConflict) items.push({ label: 'Resolve Conflicts…', id: 'resolve' });
     items.push('-',
+      { label: 'Select Lines to Commit…', id: 'selectLines', disabled: !(single && single.canLines) },
       { label: 'Include in Commit', id: 'include' },
       { label: 'Exclude from Commit', id: 'exclude' },
       '-',

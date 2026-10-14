@@ -189,6 +189,8 @@ class _CommitPanelState extends State<CommitPanel> {
       menuItem('diff', 'Show Diff', icon: Icons.difference_outlined, shortcut: 'Ctrl+D'),
       if (sel.any((c) => c.type == ChangeType.conflicted))
         menuItem('resolve', 'Resolve Conflicts…', icon: Icons.merge_type),
+      menuItem('lines', 'Select Lines to Commit…', icon: Icons.checklist,
+          enabled: single != null && ctrl.canSelectLines(single) && ctrl.status.value.state == RepoState.normal),
       const PopupMenuDivider(height: 8),
       menuItem('rollback', 'Rollback…', icon: Icons.undo, enabled: anyTracked, shortcut: 'Ctrl+Alt+Z'),
       if (allUntracked) menuItem('delete', 'Delete', icon: Icons.delete_outline),
@@ -205,6 +207,8 @@ class _CommitPanelState extends State<CommitPanel> {
     switch (r) {
       case 'diff':
         _openDiff(sel.first);
+      case 'lines':
+        ctrl.openLineSelection(single!.path);
       case 'resolve':
         showConflictsDialog(context, ctrl);
       case 'rollback':
@@ -317,9 +321,10 @@ class _CommitPanelState extends State<CommitPanel> {
       },
       child: Focus(
         focusNode: _listFocus,
-        child: ValueListenableBuilder<Set<String>>(
-          valueListenable: ctrl.included,
-          builder: (context, included, _) {
+        child: ListenableBuilder(
+          listenable: Listenable.merge([ctrl.included, ctrl.lineSelections]),
+          builder: (context, _) {
+            final included = ctrl.included.value;
             final s = ctrl.status.value;
             if (s.changes.isEmpty) {
               return Column(
@@ -354,7 +359,10 @@ class _CommitPanelState extends State<CommitPanel> {
               ? true
               : null;
       if (n.files.isEmpty) checked = false;
+      // Half-checked when only some lines of a file are committed.
+      if (n.files.any((f) => ctrl.lineSelections.value.containsKey(f.path)) && checked == true) checked = null;
     }
+    final lines = c == null ? null : ctrl.lineSelections.value[c.path];
     final collapsible = n.isGroup || n.isDir;
     final collapsed = _collapsed.contains(n.key);
     return HoverRow(
@@ -446,6 +454,25 @@ class _CommitPanelState extends State<CommitPanel> {
                 ),
               ),
             ),
+            if (lines != null) ...[
+              const SizedBox(width: 6),
+              Tooltip(
+                message: 'Only some lines are committed. Click to change the selection.',
+                child: InkWell(
+                  onTap: () => ctrl.openLineSelection(c.path),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('${lines.selected}/${lines.total} lines',
+                        style: const TextStyle(fontSize: 11, color: Colors.white)),
+                  ),
+                ),
+              ),
+            ],
             if (!_groupByDir || c.oldPath != null) ...[
               const SizedBox(width: 8),
               Expanded(

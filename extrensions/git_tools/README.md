@@ -10,7 +10,7 @@ Extension cho VS Code mang Git tool window kiểu Android Studio vào VS Code:
 - Merge tool 3 cột.
 - **AI tự viết commit message** bằng Claude hoặc Google Gemini.
 
-Phiên bản: 0.2.2 · Yêu cầu: VS Code **1.90 trở lên** và **Git** đã cài (lệnh `git` chạy được trong terminal).
+Phiên bản: 0.3.0 · Yêu cầu: VS Code **1.90 trở lên** và **Git** đã cài (lệnh `git` chạy được trong terminal).
 
 ---
 
@@ -38,7 +38,7 @@ Phiên bản: 0.2.2 · Yêu cầu: VS Code **1.90 trở lên** và **Git** đã 
 
 ### Cách 1 — Cài từ file `.vsix` (khuyên dùng)
 
-File `git-tools-as-0.2.2.vsix` nằm trong thư mục extension.
+File `git-tools-as-0.3.0.vsix` nằm trong thư mục extension.
 
 **Trong VS Code:**
 1. Mở view Extensions (`Ctrl+Shift+X`).
@@ -48,7 +48,7 @@ File `git-tools-as-0.2.2.vsix` nằm trong thư mục extension.
 **Hoặc bằng terminal:**
 
 ```bash
-code --install-extension git-tools-as-0.2.2.vsix
+code --install-extension git-tools-as-0.3.0.vsix
 ```
 
 Sau khi cài, nếu VS Code yêu cầu thì bấm **Reload**. Biểu tượng **Git Tools** sẽ xuất hiện trên thanh activity bar bên trái.
@@ -182,6 +182,27 @@ Nút trên thanh tiêu đề view Commit dùng để chuyển cách hiển thị
   - Fetch
   - Select Repository
   - AI Commit Message: Configure / Setup Guide
+
+### Chọn từng dòng để commit (partial commit)
+
+Giống Android Studio, bạn có thể commit **chỉ một số dòng** của một file. Các dòng còn lại vẫn nằm trong working copy để commit sau.
+
+1. Chuột phải file trong view Commit ▸ **Select Lines to Commit…**. Hoặc mở file trong editor rồi chuột phải tab ▸ **Select Lines to Commit…**, hay Command Palette ▸ **Git Tools: Select Lines to Commit…**.
+2. Panel **Commit Lines** hiện diff của file:
+   - Mỗi dòng thêm (+) hoặc xoá (−) có một checkbox. Click vào dòng để bật/tắt; `Shift+Click` để bật/tắt cả một khoảng.
+   - Mỗi đoạn thay đổi (hunk) có checkbox ở đầu đoạn để chọn cả đoạn. Ô hiện lưng chừng khi chỉ chọn một phần.
+   - Dòng **không chọn** hiện mờ và gạch ngang, nghĩa là sẽ không được commit.
+   - Có các nút **Select All / Select None**, **Open Diff**, **Open File**, **Go to Commit**.
+3. Trong view Commit, file chỉ chọn một phần có checkbox lưng chừng và nhãn `3/7 lines`. Bấm vào nhãn để mở lại panel.
+4. Bấm **Commit** như bình thường. Chỉ những dòng đã chọn được commit.
+
+Lưu ý:
+- Chỉ áp dụng cho file **đã có trong git và bị sửa** (*modified*). File mới, file bị xoá, file đổi tên, file nhị phân thì commit cả file.
+- Tick hoặc bỏ tick checkbox của cả file trong view Commit sẽ bỏ lựa chọn theo dòng (quay về cả file hoặc không gì).
+- Nếu bạn sửa file sau khi đã chọn dòng, lựa chọn được giữ cho những dòng vẫn còn nguyên. Khi commit, nếu file đã thay đổi so với lúc chọn, extension báo và mở lại panel để bạn xem lại.
+- Không dùng được khi đang merge / rebase (lúc đó git phải commit cả file).
+- Extension commit qua một index tạm, nên **index thật của bạn không bị thay đổi**: những gì bạn đã stage bằng công cụ khác vẫn giữ nguyên, và git hooks (pre-commit, commit-msg) vẫn chạy.
+- Nút ✨ AI chỉ đưa các dòng đã chọn vào nội dung gửi cho AI.
 
 ---
 
@@ -423,6 +444,7 @@ Mở Command Palette (`Ctrl+Shift+P`) và gõ `Git Tools`:
 | Manage Remotes… | Thêm, sửa URL, xoá remote |
 | Select Repository… / Open Repository… / Reopen Closed Repositories | Chọn, thêm hoặc hiện lại repository |
 | Group by Directory / Group by: None (Flat List) | Đổi cách hiển thị trong view Commit |
+| Select Lines to Commit… | Chọn từng dòng của file đang mở để commit |
 | Show Git Console | Xem các lệnh git đã chạy |
 | Refresh | Làm mới |
 | AI Commit Message: Configure… / Set API Key… / Remove API Key… / Test Connection / Setup Guide | Cấu hình AI |
@@ -450,7 +472,7 @@ Extension không gán phím tắt mặc định để tránh trùng phím của 
 
 ## 14. Giới hạn hiện tại
 
-- Chưa có interactive rebase (squash / reorder nhiều commit), shelve, và stage từng dòng.
+- Chưa có interactive rebase (squash / reorder nhiều commit) và shelve.
 - Diff khi click file trong view Commit luôn so với `HEAD`, không tách riêng phần đã stage và chưa stage.
 - Nút ✨ trên Source Control của VS Code dùng danh sách file đang tick của Git Tools, không dùng danh sách *Staged Changes* của VS Code.
 - API key lưu riêng trên từng máy, không đồng bộ.
@@ -474,18 +496,20 @@ git_tools/
 │  ├─ repositoriesView.js view Source Control Repositories (media/repos.*)
 │  ├─ mergeTool.js      merge tool 3 cột   (media/merge.*)
 │  ├─ conflicts.js      đọc conflict marker
+│  ├─ lineSelection.js  chọn từng dòng: đọc diff, dựng nội dung commit
+│  ├─ selectLines.js    panel Commit Lines  (media/lines.*)
 │  ├─ diff.js           nội dung file theo revision cho diff editor
 │  ├─ ai.js             gọi Claude / Gemini (streaming)
 │  ├─ aiCommands.js     cấu hình AI, Secret Storage, sinh message
 │  └─ guide.js          trang Setup Guide  (media/guide.*)
-└─ test/core.test.js    test không cần VS Code
+└─ test/                test không cần VS Code (core, lineSelection)
 ```
 
 - Không có dependency và không có bước build. Sửa file JS rồi reload cửa sổ Extension Development Host là thấy thay đổi.
 - Chạy test (cần Node 18 trở lên và git):
 
   ```bash
-  node --test test/core.test.js
+  node --test test/core.test.js test/lineSelection.test.js
   ```
 
 - Đóng gói lại file `.vsix` (cần Node và Internet ở lần chạy đầu):

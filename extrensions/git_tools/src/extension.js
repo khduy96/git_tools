@@ -12,6 +12,7 @@ const { RepositoriesViewProvider } = require('./repositoriesView');
 const { AiController } = require('./aiCommands');
 const { openMergeTool } = require('./mergeTool');
 const { showSetupGuide } = require('./guide');
+const { openLineSelection } = require('./selectLines');
 const cmd = require('./commands');
 
 /** @param {vscode.ExtensionContext} context */
@@ -91,6 +92,23 @@ async function activate(context) {
   regFree('gitTools.repo.revealInOS', (node) => {
     const m = (node && node.model) || manager.current;
     if (m) vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(m.root));
+  });
+
+  // Line level selection (partial commit).
+  regFree('gitTools.selectLines', async (arg) => {
+    let m = arg && arg.model;
+    let rel = arg && arg.path;
+    if (!m || !rel) {
+      const uri = arg instanceof vscode.Uri ? arg : vscode.window.activeTextEditor?.document.uri;
+      if (!uri || uri.scheme !== 'file') return vscode.window.showInformationMessage('Open a modified file to select lines to commit.');
+      const file = uri.fsPath.toLowerCase();
+      m = manager.list().filter((x) => file.startsWith(x.root.toLowerCase() + path.sep))
+        .sort((a, b) => b.root.length - a.root.length)[0];
+      if (!m) return vscode.window.showInformationMessage('The file is not in a Git repository.');
+      rel = path.relative(m.root, uri.fsPath).replace(/\\/g, '/');
+      if (!m._full) await manager.setCurrent(m);
+    }
+    await openLineSelection(context, m, rel);
   });
 
   // Commit view grouping.

@@ -18,6 +18,11 @@ flutter build windows --release
 - Click 1 lần mở diff dạng preview, double-click mở tab cố định; group theo thư mục
 - Commit, Commit and Push…, Amend, Sign-off, đổi author (Ctrl+Enter để commit)
 - Rollback (có tuỳ chọn xoá file added), Delete / Add to .gitignore cho file unversioned
+- **Chọn từng dòng để commit** (chuột phải file ▸ Select Lines to Commit…):
+  - Tab "Commit Lines" có checkbox cho từng dòng và từng đoạn thay đổi; dòng không chọn vẫn nằm lại trong working copy.
+  - File chọn một phần có checkbox lưng chừng và nhãn `x/y lines`.
+  - Commit đi qua một index tạm, nên index thật và git hooks không bị ảnh hưởng.
+  - Chỉ áp dụng cho file *modified* và không dùng khi đang merge / rebase.
 - Show History, Annotate (git blame), Copy Path, Show in Explorer
 - Banner Merging / Rebasing / Cherry-picking với Continue / Skip / Abort
 

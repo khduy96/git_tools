@@ -618,6 +618,67 @@ class GitRepository {
     return r.stdout.split('\n').where((l) => l.trim().isNotEmpty).toList();
   }
 
+  /// Diff of one tracked file: HEAD → working tree.
+  Future<String> fileDiff(String path) => git.run(
+      ['diff', '--no-color', '--no-ext-diff', 'HEAD', '--', lit(path)]);
+
+  /// Commits through a temporary index, so only the given content is
+  /// committed and the real index is left alone (hooks still run).
+  /// [fullPaths] are committed as in the working tree, [partial] maps a path
+  /// to the exact content to commit.
+  Future<void> commitSelected({
+    required String message,
+    required List<String> fullPaths,
+    required Map<String, String> partial,
+    bool amend = false,
+    bool signOff = false,
+    String? author,
+  }) async {
+    final dir = await gitDir();
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final tmpIndex = p.join(dir, 'gittools-index-$pid-$stamp');
+    final msgFile = File(p.join(Directory.systemTemp.path, 'git_tools_msg_$stamp.txt'));
+    await msgFile.writeAsString(message);
+    final env = {'GIT_INDEX_FILE': tmpIndex};
+    final hasHead = await refExists('HEAD');
+    final allPaths = [...fullPaths, ...partial.keys];
+    try {
+      await git.run(hasHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], env: env, log: true);
+      if (fullPaths.isNotEmpty) {
+        await git.run(['add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'],
+            env: env, stdin: _pathspecs(fullPaths), log: true);
+      }
+      for (final e in partial.entries) {
+        // --path applies the clean filters (e.g. CRLF → LF) like `git add`.
+        final sha = (await git.run(['hash-object', '-w', '--stdin', '--path=${e.key}'], stdin: e.value)).trim();
+        final ls = hasHead ? (await git.run(['ls-tree', 'HEAD', '--', lit(e.key)])).trim() : '';
+        final mode = ls.isEmpty ? '100644' : ls.split(RegExp(r'\s')).first;
+        await git.run(['update-index', '--add', '--cacheinfo', '$mode,$sha,${e.key}'], env: env, log: true);
+      }
+      await git.run([
+        'commit',
+        '-F',
+        msgFile.path,
+        if (amend) '--amend',
+        if (signOff) '--signoff',
+        if (author != null && author.trim().isNotEmpty) '--author=$author',
+      ], env: env, log: true);
+      // Sync the real index for the committed paths with the new HEAD; the
+      // unselected lines stay as unstaged changes in the working tree.
+      if (allPaths.isNotEmpty) {
+        await git.run(['reset', '-q', '--pathspec-from-file=-', '--pathspec-file-nul'],
+            stdin: _pathspecs(allPaths), log: true);
+      }
+    } finally {
+      for (final f in [tmpIndex, '$tmpIndex.lock', msgFile.path]) {
+        try {
+          final file = File(f);
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
   Future<String> lastCommitMessage() async =>
       (await git.run(['log', '-1', '--format=%B'])).trim();
 

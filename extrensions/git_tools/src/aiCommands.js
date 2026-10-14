@@ -143,6 +143,13 @@ class AiController {
       if (!base) files = files.map((f) => ({ path: f.path, type: /** @type {const} */ ('untracked') }));
 
       const perFile = await m.repo.diffPerFile(files, base);
+      // Files committed line by line: describe only the selected lines.
+      if (!amend && m.lineSelections.size) {
+        try {
+          const { filteredPatch } = require('./lineSelection');
+          for (const p of await m.selectedContents()) perFile.set(p.path, filteredPatch(p.path, p.parsed, p.sel.excluded));
+        } catch { /* selection out of date: fall back to the full diff */ }
+      }
       let diff = '';
       const omitted = [];
       for (const [file, text] of perFile) {

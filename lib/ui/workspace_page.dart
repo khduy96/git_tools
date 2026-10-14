@@ -12,6 +12,7 @@ import 'commit/commit_panel.dart';
 import 'common.dart';
 import 'console/console_panel.dart';
 import 'diff/blame_view.dart';
+import 'diff/lines_view.dart';
 import 'diff/diff_view.dart';
 import 'dialogs/ai_settings_dialog.dart';
 import 'dialogs/ai_setup_guide.dart';
@@ -552,6 +553,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
                             settings: widget.settings,
                           ),
                         BlameTab(:final path) => BlameView(controller: ctrl, path: path),
+                        LinesTab(:final path) => LinesView(controller: ctrl, path: path),
                       },
                     ),
                 ],
@@ -774,7 +776,11 @@ class _EditorTabButtonState extends State<_EditorTabButton> {
             ),
             child: Row(children: [
               Icon(
-                widget.tab is BlameTab ? Icons.person_search_outlined : Icons.difference_outlined,
+                switch (widget.tab) {
+                  BlameTab() => Icons.person_search_outlined,
+                  LinesTab() => Icons.checklist,
+                  DiffTab() => Icons.difference_outlined,
+                },
                 size: 14,
                 color: AppColors.textDim,
               ),

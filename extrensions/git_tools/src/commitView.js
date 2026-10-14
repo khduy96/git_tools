@@ -74,7 +74,15 @@ class CommitViewProvider {
         groupBy: this.groupBy,
         repoState: m.status.state,
         hasCommits: !!m.status.head,
-        changes: m.status.changes.map((c) => ({ ...c, included: c.type !== 'conflicted' && m.isIncluded(c) })),
+        changes: m.status.changes.map((c) => {
+          const sel = m.lineSelections.get(c.path);
+          return {
+            ...c,
+            included: c.type !== 'conflicted' && m.isIncluded(c),
+            canLines: m.canSelectLines(c) && m.status.state === 'normal',
+            lines: sel ? { selected: sel.total - sel.excluded.size, total: sel.total } : null,
+          };
+        }),
         message: m.message,
         amend: m.amend,
         busy: m.busy,
@@ -156,6 +164,8 @@ class CommitViewProvider {
         return cmd.addToGitignore(m, changes);
       case 'addToVcs':
         return cmd.addToVcs(m, changes);
+      case 'selectLines':
+        return vscode.commands.executeCommand('gitTools.selectLines', { model: m, path: first.path });
       case 'history':
         m.setLogFilter({ path: first.path, branch: null });
         return vscode.commands.executeCommand('gitTools.log.focus');

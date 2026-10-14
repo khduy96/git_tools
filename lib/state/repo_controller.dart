@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
@@ -8,6 +9,7 @@ import '../ai/commit_message_ai.dart';
 import '../git/git_process.dart';
 import '../git/git_repository.dart';
 import '../git/graph_layout.dart';
+import '../git/line_selection.dart';
 import '../git/models.dart';
 import 'app_settings.dart';
 
@@ -48,6 +50,26 @@ class BlameTab extends EditorTab {
   String get key => 'blame:$path';
   @override
   String get title => '${p.basename(path)} (Annotate)';
+}
+
+/// Line selection (partial commit) of a modified file.
+class LinesTab extends EditorTab {
+  LinesTab(this.path);
+  final String path;
+
+  @override
+  String get key => 'lines:$path';
+  @override
+  String get title => '${p.basename(path)} (Commit Lines)';
+}
+
+/// The diff of a file changed after its lines were selected.
+class StaleSelectionException implements Exception {
+  StaleSelectionException(this.path);
+  final String path;
+
+  @override
+  String toString() => '$path changed after its lines were selected. Review the selection again.';
 }
 
 class LogFilter {
@@ -280,6 +302,12 @@ class RepoController {
     final paths = {for (final c in s.changes) c.path};
     _excludedTracked.removeWhere((p) => !paths.contains(p));
     _includedUntracked.removeWhere((p) => !paths.contains(p));
+    final stale = lineSelections.value.keys
+        .where((p) => !canSelectLines(s.changes.where((c) => c.path == p).firstOrNull))
+        .toList();
+    if (stale.isNotEmpty) {
+      lineSelections.value = {...lineSelections.value}..removeWhere((k, _) => stale.contains(k));
+    }
     included.value = {
       for (final c in s.changes)
         if (c.type == ChangeType.untracked
@@ -290,6 +318,12 @@ class RepoController {
   }
 
   void setIncluded(Iterable<FileChange> changes, bool value) {
+    final selections = {...lineSelections.value};
+    // Ticking / unticking the whole file drops a line selection.
+    for (final c in changes) {
+      selections.remove(c.path);
+    }
+    if (selections.length != lineSelections.value.length) lineSelections.value = selections;
     for (final c in changes) {
       final untracked = c.type == ChangeType.untracked;
       if (untracked) {
@@ -304,6 +338,54 @@ class RepoController {
   List<FileChange> get includedChanges => status.value.changes
       .where((c) => included.value.contains(c.path))
       .toList();
+
+  // ---------------------------------------------------------------------------
+  // Line selection (partial commit)
+  // ---------------------------------------------------------------------------
+
+  /// Files committed partially: path → excluded line keys of its diff.
+  final lineSelections = ValueNotifier<Map<String, LineSelection>>(const {});
+
+  /// Whether lines of this change can be selected individually.
+  bool canSelectLines(FileChange? c) =>
+      c != null && c.type == ChangeType.modified && status.value.hasCommits;
+
+  void openLineSelection(String path) => openTab(LinesTab(path));
+
+  /// Stores which changed lines of [path] are left out of the commit. No
+  /// exclusions means the whole file, all excluded means nothing.
+  void setLineSelection(String path, String signature, Set<String> excluded, int total) {
+    final selections = {...lineSelections.value};
+    if (excluded.isEmpty) {
+      selections.remove(path);
+      _excludedTracked.remove(path);
+    } else if (excluded.length >= total) {
+      selections.remove(path);
+      _excludedTracked.add(path);
+    } else {
+      selections[path] = LineSelection(signature, {...excluded}, total);
+      _excludedTracked.remove(path);
+    }
+    lineSelections.value = selections;
+    _recomputeIncluded();
+  }
+
+  /// Content to commit for every included file with a line selection.
+  /// Throws [StaleSelectionException] when a file changed since selection.
+  Future<List<({String path, String content, ParsedDiff parsed, LineSelection sel})>>
+      selectedContents() async {
+    final result = <({String path, String content, ParsedDiff parsed, LineSelection sel})>[];
+    for (final c in includedChanges) {
+      final sel = lineSelections.value[c.path];
+      if (sel == null) continue;
+      final parsed = parseDiff(await repo.fileDiff(c.path));
+      if (parsed.signature != sel.signature) throw StaleSelectionException(c.path);
+      final head = await repo.fileBytes(const CommitRev('HEAD'), c.path);
+      final oldText = head == null ? '' : utf8.decode(head, allowMalformed: true);
+      result.add((path: c.path, content: buildContent(oldText, parsed, sel.excluded), parsed: parsed, sel: sel));
+    }
+    return result;
+  }
 
   // ---------------------------------------------------------------------------
   // Operations
@@ -374,19 +456,45 @@ class RepoController {
       return false;
     }
     final paths = changes.expand((c) => c.allPaths).toSet().toList();
+    final hasLines = changes.any((c) => lineSelections.value.containsKey(c.path));
+    if (hasLines && inMerge) {
+      notify(AppNotification('Cannot commit selected lines during a merge or rebase',
+          details: 'Include whole files instead.', isError: true));
+      return false;
+    }
+    var partial = <String, String>{};
+    if (hasLines) {
+      try {
+        partial = {for (final x in await selectedContents()) x.path: x.content};
+      } on StaleSelectionException catch (e) {
+        notify(AppNotification('Line selection is out of date', details: '$e', isError: true));
+        openLineSelection(e.path);
+        return false;
+      }
+    }
     final ok = await run(
       amend.value ? 'Amend commit' : 'Commit',
-      () => repo.commit(
-        message: message,
-        paths: paths,
-        amend: amend.value,
-        signOff: signOff,
-        author: author,
-        partial: !inMerge,
-      ),
+      () => hasLines
+          ? repo.commitSelected(
+              message: message,
+              fullPaths: paths.where((p) => !partial.containsKey(p)).toList(),
+              partial: partial,
+              amend: amend.value,
+              signOff: signOff,
+              author: author,
+            )
+          : repo.commit(
+              message: message,
+              paths: paths,
+              amend: amend.value,
+              signOff: signOff,
+              author: author,
+              partial: !inMerge,
+            ),
       success: amend.value
           ? 'Amended commit'
-          : '${changes.length} file${changes.length == 1 ? '' : 's'} committed: ${message.split('\n').first}',
+          : '${changes.length} file${changes.length == 1 ? '' : 's'} committed'
+              '${partial.isEmpty ? '' : ' (${partial.length} partially)'}: ${message.split('\n').first}',
     );
     if (ok) {
       commitMessage.clear();
@@ -394,6 +502,8 @@ class RepoController {
       _messageBeforeAmend = '';
       _includedUntracked.clear();
       _excludedTracked.clear();
+      lineSelections.value = const {};
+      _recomputeIncluded();
     }
     return ok;
   }
@@ -454,6 +564,16 @@ class RepoController {
             : files,
         base: base,
       );
+      // Files committed line by line: describe only the selected lines.
+      if (!isAmend && lineSelections.value.isNotEmpty) {
+        try {
+          for (final x in await selectedContents()) {
+            perFile[x.path] = filteredPatch(x.path, x.parsed, x.sel.excluded);
+          }
+        } on StaleSelectionException {
+          // Out of date: the full diff is used instead.
+        }
+      }
       final diff = StringBuffer();
       final omitted = <String>[];
       for (final entry in perFile.entries) {

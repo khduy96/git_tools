@@ -2,7 +2,7 @@
   "name": "git-tools-as",
   "displayName": "Git Tools (Android Studio style)",
   "description": "Android Studio style Git tool window for VS Code: commit panel with checkboxes, log with branch graph, branches popup, push/pull dialogs, stashes and AI commit messages (Claude / Gemini).",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "publisher": "local",
   "license": "UNLICENSED",
   "private": true,
@@ -345,6 +345,12 @@
         "command": "gitTools.stash.showFiles",
         "title": "Show Changes",
         "category": "Git Tools"
+      },
+      {
+        "command": "gitTools.selectLines",
+        "title": "Select Lines to Commit…",
+        "category": "Git Tools",
+        "icon": "$(checklist)"
       }
     ],
     "menus": {
@@ -574,6 +580,11 @@
           "command": "gitTools.fileHistory",
           "when": "resourceScheme == file",
           "group": "gitTools@1"
+        },
+        {
+          "command": "gitTools.selectLines",
+          "when": "resourceScheme == file",
+          "group": "gitTools@2"
         }
       ],
       "commandPalette": [

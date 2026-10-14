@@ -106,6 +106,67 @@ test('dragging a whole folder: add and unversion many files via stdin', async ()
   }
 });
 
+test('commit only selected lines through a temporary index', async () => {
+  const { parseDiff, buildContent } = require('../src/lineSelection');
+  const r = tempRepo();
+  try {
+    r.write('f.txt', 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n');
+    r.write('other.txt', 'o\n');
+    await r.repo.commit({ message: 'init', paths: ['f.txt', 'other.txt'] });
+    // Two separate changes; a third file is staged by the user beforehand.
+    r.write('f.txt', 'ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\n');
+    r.write('other.txt', 'o2\n');
+    r.git('add', 'other.txt');
+    r.write('new.txt', 'new\n');
+
+    const parsed = parseDiff(await r.repo.fileDiff('f.txt'));
+    // Leave out "+eleven": exclude the keys of that line.
+    const excluded = new Set();
+    parsed.hunks.forEach((hk, i) => hk.lines.forEach((l, j) => { if (l.text === 'eleven') excluded.add(`${i}:${j}`); }));
+    const head = (await r.repo.show('HEAD', 'f.txt')).toString('utf8');
+    const content = buildContent(head, parsed, excluded);
+
+    await r.repo.commitSelected({ message: 'partial', fullPaths: ['new.txt'], partial: [{ path: 'f.txt', content }] });
+
+    assert.equal(r.git('show', 'HEAD:f.txt'), 'ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n');
+    assert.equal(r.git('show', 'HEAD:new.txt'), 'new\n');
+    assert.deepEqual(r.git('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort(), ['f.txt', 'new.txt']);
+    // The left-out line stays in the working tree, other.txt stays staged.
+    assert.match(fs.readFileSync(path.join(r.dir, 'f.txt'), 'utf8'), /eleven/);
+    const s = await r.repo.status();
+    assert.deepEqual(s.changes.map((c) => [c.path, c.type]).sort(), [['f.txt', 'modified'], ['other.txt', 'modified']]);
+    assert.equal(r.git('diff', '--cached', '--name-only').trim(), 'other.txt');
+    assert.equal(r.git('diff', '--', 'f.txt').includes('+eleven'), true);
+    assert.equal(fs.readdirSync(path.join(r.dir, '.git')).some((n) => n.startsWith('gittools-index')), false);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('line selection with core.autocrlf=true and CRLF files', async () => {
+  const { parseDiff, buildContent } = require('../src/lineSelection');
+  const r = tempRepo();
+  try {
+    r.git('config', 'core.autocrlf', 'true');
+    r.write('w.txt', 'a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\r\n');
+    await r.repo.commit({ message: 'init', paths: ['w.txt'] });
+    r.write('w.txt', 'A\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nH\r\n');
+    const parsed = parseDiff(await r.repo.fileDiff('w.txt'));
+    const excluded = new Set();
+    parsed.hunks.forEach((hk, i) => hk.lines.forEach((l, j) => { if (/^[hH]\r?$/.test(l.text)) excluded.add(`${i}:${j}`); }));
+    const head = (await r.repo.show('HEAD', 'w.txt')).toString('utf8');
+    await r.repo.commitSelected({ message: 'crlf', fullPaths: [], partial: [{ path: 'w.txt', content: buildContent(head, parsed, excluded) }] });
+    // Stored normalized (LF) in the repository, only "A" committed.
+    assert.equal(r.git('show', 'HEAD:w.txt'), 'A\nb\nc\nd\ne\nf\ng\nh\n');
+    const diff = r.git('diff', '--', 'w.txt');
+    assert.match(diff, /-h/);
+    assert.match(diff, /\+H/);
+    assert.doesNotMatch(diff, /[-+]A|[-+]a/);
+  } finally {
+    r.cleanup();
+  }
+});
+
 test('rename detection and rollback', async () => {
   const r = tempRepo();
   try {

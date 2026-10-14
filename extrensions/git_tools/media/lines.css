@@ -1,0 +1,65 @@
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 10px 14px;
+}
+#top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#top .title { flex: 1; min-width: 200px; }
+#top .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.hint { margin: 6px 0 8px; font-size: .92em; }
+
+#body {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--gt-border);
+  background: var(--vscode-editor-background);
+  font-family: var(--gt-mono);
+  font-size: var(--vscode-editor-font-size, 13px);
+}
+
+.hunk { border-bottom: 1px solid var(--gt-border); }
+.hhead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background));
+  border-bottom: 1px solid var(--gt-border);
+  font-family: var(--vscode-font-family);
+}
+.hhead .spacer { flex: 1; }
+
+.line {
+  display: flex;
+  align-items: stretch;
+  min-height: 19px;
+  line-height: 19px;
+  white-space: pre;
+}
+.line .cb { width: 26px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.line .no {
+  width: 48px;
+  flex-shrink: 0;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--vscode-editorLineNumber-foreground, var(--gt-muted));
+  user-select: none;
+}
+.line .mark { width: 16px; flex-shrink: 0; text-align: center; user-select: none; }
+.line .code { flex: 1; padding-right: 12px; }
+
+.line.add, .line.del { cursor: pointer; }
+.line.add { background: var(--vscode-diffEditor-insertedLineBackground, rgba(155,185,85,.2)); }
+.line.del { background: var(--vscode-diffEditor-removedLineBackground, rgba(255,0,0,.2)); }
+.line.add .mark { color: var(--gt-added); }
+.line.del .mark { color: var(--vscode-gitDecoration-deletedResourceForeground, #e06c75); }
+.line.add:hover, .line.del:hover { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+
+/* Left out of the commit: faded and struck through. */
+.line.off { background: transparent; opacity: .55; }
+.line.off .code { text-decoration: line-through; text-decoration-color: var(--gt-muted); }
+.line.ctx { opacity: .75; }
